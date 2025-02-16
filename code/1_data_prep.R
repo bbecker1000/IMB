@@ -59,12 +59,12 @@ raw_data <- read_csv(here::here("data", "IMB_RearingReleaseData.csv")) %>%
 cleaned_data <- raw_data %>% 
   mutate(larval_days = if_else(larval_days < 0 | larval_days > 100, NA, larval_days)) %>% 
   filter(!is.na(collection_date),
-         collection_date <= hatch_date,
-         hatch_date <= date_instar_2,
-         date_instar_2 <= date_instar_3,
-         date_instar_3 <= date_instar_4,
-         date_instar_4 <= date_instar_5,
-         date_instar_5 <= pupation_date)
+         is.na(hatch_date) | collection_date <= hatch_date,
+         is.na(hatch_date) | hatch_date <= date_instar_2,
+         is.na(date_instar_2) | date_instar_2 <= date_instar_3,
+         is.na(date_instar_3) | date_instar_3 <= date_instar_4,
+         is.na(date_instar_4) | date_instar_4 <= date_instar_5,
+         is.na(date_instar_5) | date_instar_5 <= pupation_date)
 
 # getting a sense of NA values in each column
 
@@ -74,6 +74,14 @@ raw_data %>% count(larval_days)
 
 raw_data %>% count(complete.cases(.))
 
-weird_data <- cleaned_data %>% 
-  filter(is.na(collection_date))
+diff <- anti_join(raw_data, cleaned_data, by = join_by(imb_id))
+
+weird_data <- raw_data %>% 
+  filter((!is.na(hatch_date) & collection_date > hatch_date) |
+         (!is.na(hatch_date) & hatch_date > date_instar_2) |
+         (!is.na(date_instar_2) & date_instar_2 > date_instar_3) |
+         (!is.na(date_instar_3) & date_instar_3 > date_instar_4) |
+         (!is.na(date_instar_4) & date_instar_4 > date_instar_5) |
+         (!is.na(date_instar_5) & date_instar_5 > pupation_date))
+
 
