@@ -6,7 +6,7 @@ library(forcats)
 
 setwd(here::here("code"))
 
-# reading in data, assigning data types
+# reading in rearing data, assigning data types
 raw_data <- read_csv(here::here("data", "IMB_RearingReleaseData.csv")) %>% 
   rename(imb_id = `IMB ID`,
          rearing_year = `REARING YEAR`,
@@ -22,7 +22,7 @@ raw_data <- read_csv(here::here("data", "IMB_RearingReleaseData.csv")) %>%
          date_instar_5 = `Date fifth instar`,
          pupation_date = `PUPATION DATE`,
          larval_days = `LARVAL DAYS`,
-         survival = `SURVIVE TO PUPATION`,
+         overall_survival = `SURVIVE TO PUPATION`,
          stage_at_death = `STAGE AT DEATH`,
          notes = `REARING NOTES`,
          release_year = `RELEASE YEAR`,
@@ -36,8 +36,8 @@ raw_data <- read_csv(here::here("data", "IMB_RearingReleaseData.csv")) %>%
          release_notes = `RELEASE NOTES`
          ) %>% 
   mutate(larval_days = if_else((larval_days == "#VALUE!" | larval_days == "#REF!"), NA, larval_days),
-         survival = if_else(survival == "y", "Y", survival),
-         survival = if_else((survival == "n" | survival == "NV"), "N", survival),
+         overall_survival = if_else(overall_survival == "y", "Y", overall_survival),
+         overall_survival = if_else((overall_survival == "n" | overall_survival == "NV"), "N", overall_survival),
          sex = if_else(sex == "f", "F", sex),
          sex = if_else(sex == "m", "M", sex),
          sex = if_else(sex == "UNK", NA, sex),
@@ -47,7 +47,7 @@ raw_data <- read_csv(here::here("data", "IMB_RearingReleaseData.csv")) %>%
          collection_area = as.factor(collection_area),
          collection_stage = as.factor(collection_stage),
          larval_days = as.integer(larval_days),
-         survival = as.factor(survival),
+         overall_survival = as.factor(overall_survival),
          stage_at_death = as.factor(stage_at_death),
          release_year = as.integer(release_year),
          release_site = as.factor(release_site),
@@ -73,7 +73,13 @@ raw_data <- read_csv(here::here("data", "IMB_RearingReleaseData.csv")) %>%
                                        pupa = c("pupa", "Pupa", "pupae")
          ))
 
-# removing illogical data, adding durations for analysis
+
+# reading in temperature data
+temp_data <- read_csv(here::here("data", "daily_temps.csv")) %>% 
+  select(date, avg) %>% 
+  mutate(date = ymd(date))
+
+# removing illogical data, adding durations for analysis, rearranging data to make analysis easier
 cleaned_data <- raw_data %>% 
   select(-notes, -release_notes, -release_site, -release_area, -lat, -long) %>% 
   mutate(larval_days = if_else(larval_days < 0 | larval_days > 100, NA, larval_days)) %>% 
@@ -86,24 +92,27 @@ cleaned_data <- raw_data %>%
          is.na(date_instar_5) | is.na(pupation_date) | date_instar_5 <= pupation_date,
          !(is.na(hatch_date) & is.na(date_instar_2) & is.na(date_instar_3) & is.na(date_instar_4) & is.na(date_instar_5) & is.na(pupation_date))) %>% 
   mutate(
-    duration_egg = as.integer(hatch_date - collection_date),
-    duration_first_instar = as.integer(date_instar_2 - hatch_date),
-    duration_second_instar = as.integer(date_instar_3 - date_instar_2),
-    duration_third_instar = as.integer(date_instar_4 - date_instar_3),
-    duration_fourth_instar = as.integer(date_instar_5 - date_instar_4),
-    duration_fifth_instar = as.integer(pupation_date - date_instar_5),
+    # could be relatively easy to change these durations into degree days based on temp data?
+    duration_first = as.integer(date_instar_2 - hatch_date),
+    duration_second = as.integer(date_instar_3 - date_instar_2),
+    duration_third = as.integer(date_instar_4 - date_instar_3),
+    duration_fourth = as.integer(date_instar_5 - date_instar_4),
+    duration_fifth = as.integer(pupation_date - date_instar_5),
     duration_pupa = as.integer(eclosure_date - pupation_date)
   )
 
-# getting a sense of NA values in each column
-
-cleaned_data %>% count(survival)
-cleaned_data %>% count(sex)
-cleaned_data %>% count(larval_days)
-cleaned_data %>% count(collection_stage)
-cleaned_data %>% count(host_plant)
-cleaned_data %>% count(stage_at_death)
-
-weird_data <- raw_data %>% 
-  filter((!is.na(stage_at_death)) & survival == "Y")
-
+# rearranging data to make analysis easier
+data <- cleaned_data %>% 
+  select(-contains("date"), -release_year, -collection_site, -collection_area, -sex) %>% 
+  pivot_longer(cols = starts_with("duration"), names_to = "stage", names_prefix = "duration_", values_to = "duration") %>% 
+  mutate_at(vars(contains("stage")), 
+            factor,
+            levels = c("egg", "first", "second", "third", "fourth", "fifth", "pupa"),
+            ordered = TRUE) %>% 
+  mutate(invalid_stage = (collection_stage > stage) | stage_at_death <= stage,
+         invalid_stage = if_else(is.na(invalid_stage), FALSE, invalid_stage)) %>% 
+  filter(invalid_stage == FALSE,
+         !is.na(duration),
+         !is.na(overall_survival)) %>%  
+  mutate(died_next_stage = if_else(as.character(overall_survival) == "Y", FALSE, (as.integer(stage) + 1) == as.integer(stage_at_death))) %>% 
+  select(-invalid_stage, -stage_at_death, -larval_days)
