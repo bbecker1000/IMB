@@ -53,35 +53,57 @@ raw_data <- read_csv(here::here("data", "IMB_RearingReleaseData.csv")) %>%
          release_site = as.factor(release_site),
          release_area = as.factor(release_area),
          sex = as.factor(sex)) %>% 
-  mutate_at(vars(contains("date")), mdy)
+  mutate_at(vars(contains("date")), mdy) %>% 
+  mutate(collection_stage = fct_collapse(collection_stage, 
+                                       egg = c("egg", "Egg"),
+                                       first = c("First", "1st"),
+                                       second = c("Second", "2nd"),
+                                       third = c("Third", "3rd"),
+                                       fourth = c("Fourth", "4th"),
+                                       fifth = c("Fifth"),
+                                       other_level = NA
+                                       ),
+         stage_at_death = fct_collapse(stage_at_death,
+                                       egg = c("Egg"),
+                                       first = c("First", "1st"),
+                                       second = c("Second", "2nd"),
+                                       third = c("Third", "3rd"),
+                                       fourth = c("Fourth"),
+                                       fifth = c("Fifth", "5th"),
+                                       pupa = c("pupa", "Pupa", "pupae")
+         ))
 
-# removing illogical data
+# removing illogical data, adding durations for analysis
 cleaned_data <- raw_data %>% 
+  select(-notes, -release_notes, -release_site, -release_area, -lat, -long) %>% 
   mutate(larval_days = if_else(larval_days < 0 | larval_days > 100, NA, larval_days)) %>% 
   filter(!is.na(collection_date),
          is.na(hatch_date) | collection_date <= hatch_date,
-         is.na(hatch_date) | hatch_date <= date_instar_2,
-         is.na(date_instar_2) | date_instar_2 <= date_instar_3,
-         is.na(date_instar_3) | date_instar_3 <= date_instar_4,
-         is.na(date_instar_4) | date_instar_4 <= date_instar_5,
-         is.na(date_instar_5) | date_instar_5 <= pupation_date)
+         is.na(hatch_date) | is.na(date_instar_2) | hatch_date <= date_instar_2,
+         is.na(date_instar_2) | is.na(date_instar_3) | date_instar_2 <= date_instar_3,
+         is.na(date_instar_3) | is.na(date_instar_4) | date_instar_3 <= date_instar_4,
+         is.na(date_instar_4) | is.na(date_instar_5) | date_instar_4 <= date_instar_5,
+         is.na(date_instar_5) | is.na(pupation_date) | date_instar_5 <= pupation_date,
+         !(is.na(hatch_date) & is.na(date_instar_2) & is.na(date_instar_3) & is.na(date_instar_4) & is.na(date_instar_5) & is.na(pupation_date))) %>% 
+  mutate(
+    duration_egg = as.integer(hatch_date - collection_date),
+    duration_first_instar = as.integer(date_instar_2 - hatch_date),
+    duration_second_instar = as.integer(date_instar_3 - date_instar_2),
+    duration_third_instar = as.integer(date_instar_4 - date_instar_3),
+    duration_fourth_instar = as.integer(date_instar_5 - date_instar_4),
+    duration_fifth_instar = as.integer(pupation_date - date_instar_5),
+    duration_pupa = as.integer(eclosure_date - pupation_date)
+  )
 
 # getting a sense of NA values in each column
 
-raw_data %>% level(survival)
-raw_data %>% count(sex)
-raw_data %>% count(larval_days)
-
-raw_data %>% count(complete.cases(.))
-
-diff <- anti_join(raw_data, cleaned_data, by = join_by(imb_id))
+cleaned_data %>% count(survival)
+cleaned_data %>% count(sex)
+cleaned_data %>% count(larval_days)
+cleaned_data %>% count(collection_stage)
+cleaned_data %>% count(host_plant)
+cleaned_data %>% count(stage_at_death)
 
 weird_data <- raw_data %>% 
-  filter((!is.na(hatch_date) & collection_date > hatch_date) |
-         (!is.na(hatch_date) & hatch_date > date_instar_2) |
-         (!is.na(date_instar_2) & date_instar_2 > date_instar_3) |
-         (!is.na(date_instar_3) & date_instar_3 > date_instar_4) |
-         (!is.na(date_instar_4) & date_instar_4 > date_instar_5) |
-         (!is.na(date_instar_5) & date_instar_5 > pupation_date))
-
+  filter((!is.na(stage_at_death)) & survival == "Y")
 
