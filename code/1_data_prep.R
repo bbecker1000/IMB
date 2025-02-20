@@ -75,9 +75,24 @@ raw_data <- read_csv(here::here("data", "IMB_RearingReleaseData.csv")) %>%
 
 
 # reading in temperature data
-temp_data <- read_csv(here::here("data", "daily_temps.csv")) %>% 
-  select(date, avg) %>% 
-  mutate(date = ymd(date))
+threshold <- 15 # really not sure what the temperature threshold is supposed to be...
+# cannot find minimum development threshold for IMB, but i found a source that generally says the min threshold for lots
+# of butterflies is 15
+
+temp_data <- read_csv(here::here("data", "continuous_temps.csv")) %>% 
+  mutate(location = `...1`,
+         date = ymd(date),
+         time = hms(time),
+         temp = (temp.f - 32) * (5/9)) %>% 
+  filter(!str_detect(location, "mystery")) %>% 
+  select(date, time, temp) %>% 
+  group_by(date) %>% 
+  summarise(min = min(temp),
+            max = max(temp)) %>% 
+  ungroup() %>% 
+  mutate(degree_days = ((max+min)/2) - threshold)
+
+# adding temp data to rearing data... how do i do this lol
 
 # removing illogical data, adding durations for analysis, rearranging data to make analysis easier
 cleaned_data <- raw_data %>% 
@@ -93,13 +108,16 @@ cleaned_data <- raw_data %>%
          !(is.na(hatch_date) & is.na(date_instar_2) & is.na(date_instar_3) & is.na(date_instar_4) & is.na(date_instar_5) & is.na(pupation_date))) %>% 
   mutate(
     # could be relatively easy to change these durations into degree days based on temp data?
-    duration_first = as.integer(date_instar_2 - hatch_date),
-    duration_second = as.integer(date_instar_3 - date_instar_2),
-    duration_third = as.integer(date_instar_4 - date_instar_3),
-    duration_fourth = as.integer(date_instar_5 - date_instar_4),
-    duration_fifth = as.integer(pupation_date - date_instar_5),
-    duration_pupa = as.integer(eclosure_date - pupation_date)
+    duration_first = interval(hatch_date, date_instar_2),
+    duration_second = interval(date_instar_2, date_instar_3),
+    duration_third = interval(date_instar_3, date_instar_4),
+    duration_fourth = interval(date_instar_4, date_instar_5),
+    duration_fifth = interval(date_instar_5, pupation_date),
+    duration_pupa = interval(pupation_date, eclosure_date)
   )
+
+joined_data <- left_join(cleaned_data, temp_data, by = )
+
 
 # rearranging data to make analysis easier
 data <- cleaned_data %>% 
@@ -114,5 +132,9 @@ data <- cleaned_data %>%
   filter(invalid_stage == FALSE,
          !is.na(duration),
          !is.na(overall_survival)) %>%  
-  mutate(died_next_stage = if_else(as.character(overall_survival) == "Y", FALSE, (as.integer(stage) + 1) == as.integer(stage_at_death))) %>% 
-  select(-invalid_stage, -stage_at_death, -larval_days)
+  mutate(survival = if_else(as.character(overall_survival) == "Y", TRUE, (as.integer(stage) + 1) != as.integer(stage_at_death))) %>% 
+  select(-invalid_stage, -stage_at_death, -larval_days) %>% 
+  mutate(
+    start = int_start(duration),
+    end = int_end(duration)
+  )
