@@ -73,7 +73,6 @@ raw_data <- read_csv(here::here("data", "IMB_RearingReleaseData.csv")) %>%
                                        pupa = c("pupa", "Pupa", "pupae")
          ))
 
-
 # reading in temperature data
 threshold <- 15 # really not sure what the temperature threshold is supposed to be...
 # cannot find minimum development threshold for IMB, but i found a source that generally says the min threshold for lots
@@ -92,7 +91,6 @@ temp_data <- read_csv(here::here("data", "continuous_temps.csv")) %>%
   ungroup() %>% 
   mutate(degree_days = pmax(0, ((max+min)/2) - threshold))
 
-# adding temp data to rearing data... how do i do this lol
 
 # removing illogical data, adding durations for analysis, rearranging data to make analysis easier
 cleaned_data <- raw_data %>% 
@@ -107,7 +105,6 @@ cleaned_data <- raw_data %>%
          is.na(date_instar_5) | is.na(pupation_date) | date_instar_5 <= pupation_date,
          !(is.na(hatch_date) & is.na(date_instar_2) & is.na(date_instar_3) & is.na(date_instar_4) & is.na(date_instar_5) & is.na(pupation_date))) %>% 
   mutate(
-    # could be relatively easy to change these durations into degree days based on temp data?
     duration_first = interval(hatch_date, date_instar_2),
     duration_second = interval(date_instar_2, date_instar_3),
     duration_third = interval(date_instar_3, date_instar_4),
@@ -115,7 +112,6 @@ cleaned_data <- raw_data %>%
     duration_fifth = interval(date_instar_5, pupation_date)
     # duration_pupa = interval(pupation_date, eclosure_date)
   )
-
 
 # rearranging data to make analysis easier
 data <- cleaned_data %>% 
@@ -137,6 +133,14 @@ data <- cleaned_data %>%
     end = int_end(duration),
   )
 
+data_no_temp <- data %>% 
+  mutate(
+    duration = as.integer((end-start) / 86400) #value in days
+  )
+
+write_csv(data_no_temp, here::here("data", "data_no_temp.csv"))
+
+# adding degree day data to rearing data
 result <- temp_data %>%
   cross_join(data) %>%  # Cross join
   filter(date >= start & date <= end) %>% # Keep only valid date ranges
@@ -144,6 +148,12 @@ result <- temp_data %>%
   summarise(total_degree_days = sum(degree_days), .groups = "drop")
 
 # Merge summed results back into the original data
-data <- data %>%
+dd_data <- data %>%
   left_join(result, by = c("imb_id", "stage", "start", "end")) %>% 
-  filter(!is.na(total_degree_days))
+  filter(!is.na(total_degree_days)) %>% 
+  mutate(
+    duration = as.integer((end-start) / 86400) #value in days
+  )
+
+
+write_csv(dd_data, here::here("data", "dd_data.csv"))
