@@ -90,7 +90,7 @@ temp_data <- read_csv(here::here("data", "continuous_temps.csv")) %>%
   summarise(min = min(temp),
             max = max(temp)) %>% 
   ungroup() %>% 
-  mutate(degree_days = ((max+min)/2) - threshold)
+  mutate(degree_days = pmax(0, ((max+min)/2) - threshold))
 
 # adding temp data to rearing data... how do i do this lol
 
@@ -112,11 +112,9 @@ cleaned_data <- raw_data %>%
     duration_second = interval(date_instar_2, date_instar_3),
     duration_third = interval(date_instar_3, date_instar_4),
     duration_fourth = interval(date_instar_4, date_instar_5),
-    duration_fifth = interval(date_instar_5, pupation_date),
-    duration_pupa = interval(pupation_date, eclosure_date)
+    duration_fifth = interval(date_instar_5, pupation_date)
+    # duration_pupa = interval(pupation_date, eclosure_date)
   )
-
-joined_data <- left_join(cleaned_data, temp_data, by = )
 
 
 # rearranging data to make analysis easier
@@ -136,5 +134,16 @@ data <- cleaned_data %>%
   select(-invalid_stage, -stage_at_death, -larval_days) %>% 
   mutate(
     start = int_start(duration),
-    end = int_end(duration)
+    end = int_end(duration),
   )
+
+result <- temp_data %>%
+  cross_join(data) %>%  # Cross join
+  filter(date >= start & date <= end) %>% # Keep only valid date ranges
+  group_by(imb_id, stage, start, end) %>%        # Group by unique intervals
+  summarise(total_degree_days = sum(degree_days), .groups = "drop")
+
+# Merge summed results back into the original data
+data <- data %>%
+  left_join(result, by = c("imb_id", "stage", "start", "end")) %>% 
+  filter(!is.na(total_degree_days))
