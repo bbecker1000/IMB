@@ -81,11 +81,15 @@ threshold <- 10 # really not sure what the temperature threshold is supposed to 
 
 # adding temperature data from weather station
 
-station_temps <- meteo_noaa_hourly(
-  station = "727985-94276",
-  year = 2013:2024,
-  fm12 = FALSE
-) 
+# only run this once, it takes a while. Aftyer that just read_csv to get the local data
+# station_temps <- meteo_noaa_hourly(
+#   station = "727985-94276",
+#   year = 2013:2024,
+#   fm12 = FALSE
+# ) 
+# write_csv(station_temps, here::here("data", "station_temps.csv"))
+
+station_temps <- read_csv(here::here("data", "station_temps.csv"))
 
 station_temps_cleaned <- station_temps %>% 
   select(date, year, month, day, hour, t2m) %>% 
@@ -124,11 +128,11 @@ cleaned_data <- raw_data %>%
     duration_fourth = interval(date_instar_4, date_instar_5),
     duration_fifth = interval(date_instar_5, pupation_date),
     duration_pupa = interval(pupation_date, eclosure_date)
-  ) %>% 
-  mutate(
-    overall_survival = if_else(is.na(eclosure_date), "N", overall_survival),
-    stage_at_death = if_else((is.na(eclosure_date) & is.na(stage_at_death)), "pupa", stage_at_death)
   )
+  # mutate(
+  #   overall_survival = if_else(is.na(eclosure_date), "N", overall_survival),
+  #   stage_at_death = if_else((is.na(eclosure_date) & is.na(stage_at_death)), "pupa", stage_at_death)
+  # )
 
 # rearranging data to make analysis easier
 data <- cleaned_data %>% 
@@ -138,17 +142,25 @@ data <- cleaned_data %>%
             factor,
             levels = c("egg", "first", "second", "third", "fourth", "fifth", "pupa"),
             ordered = TRUE) %>% 
-  mutate(invalid_stage = (collection_stage > stage) | stage_at_death <= stage,
+  mutate(invalid_stage = (collection_stage > stage) | stage_at_death < stage,
          invalid_stage = if_else(is.na(invalid_stage), FALSE, invalid_stage)) %>% 
   filter(invalid_stage == FALSE,
-         !is.na(duration),
-         !is.na(overall_survival)) %>%  
-  mutate(survival = if_else(as.character(overall_survival) == "Y", TRUE, (as.integer(stage) + 1) != as.integer(stage_at_death))) %>% 
-  select(-invalid_stage, -stage_at_death, -larval_days) %>% 
+         # !is.na(duration),
+         # !is.na(overall_survival)
+         ) %>%  
+  select(-invalid_stage, -larval_days) %>% 
   mutate(
     start = int_start(duration),
     end = int_end(duration),
+    survival = !is.na(end)
+  ) %>% 
+  filter(
+    !(is.na(start)),
+    !(overall_survival == "Y" & is.na(end))
   )
+
+weird_data <- data %>% group_by(imb_id) %>% 
+  tally(survival == FALSE, sort = TRUE)
 
 
 data_no_temp <- data %>% 
