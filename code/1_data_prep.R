@@ -3,6 +3,7 @@ library(tidyverse)
 library(here)
 library(lubridate)
 library(forcats)
+library(climate)
 
 setwd(here::here("code"))
 
@@ -74,22 +75,34 @@ raw_data <- read_csv(here::here("data", "IMB_RearingReleaseData.csv")) %>%
          ))
 
 # reading in temperature data
-threshold <- 15 # really not sure what the temperature threshold is supposed to be...
+threshold <- 10 # really not sure what the temperature threshold is supposed to be...
 # cannot find minimum development threshold for IMB, but i found a source that generally says the min threshold for lots
 # of butterflies is 15
 
-temp_data <- read_csv(here::here("data", "continuous_temps.csv")) %>% 
-  mutate(location = `...1`,
-         date = ymd(date),
-         time = hms(time),
-         temp = (temp.f - 32) * (5/9)) %>% 
-  filter(!str_detect(location, "mystery")) %>% 
-  select(date, time, temp) %>% 
+# adding temperature data from weather station
+
+station_temps <- meteo_noaa_hourly(
+  station = "727985-94276",
+  year = 2013:2024,
+  fm12 = FALSE
+) 
+
+station_temps_cleaned <- station_temps %>% 
+  select(date, year, month, day, hour, t2m) %>% 
+  rename(temp = t2m) %>% 
+  mutate(
+    date = ymd(substr(date, 1, 10))
+  ) %>% 
   group_by(date) %>% 
-  summarise(min = min(temp),
-            max = max(temp)) %>% 
+  summarise(
+     mean_temp = mean(temp, na.rm = TRUE)
+     # max_temp = max(temp, na.rm = TRUE),
+     # min_temp = min(temp, na.rm = TRUE),
+     # avg_temp = (max_temp + min_temp)/2
+  ) %>% 
   ungroup() %>% 
-  mutate(degree_days = pmax(0, ((max+min)/2) - threshold))
+  mutate(degree_days = pmax(0, mean_temp - threshold)) %>% 
+  select(-mean_temp)
 
 
 # removing illogical data, adding durations for analysis, rearranging data to make analysis easier
@@ -109,8 +122,12 @@ cleaned_data <- raw_data %>%
     duration_second = interval(date_instar_2, date_instar_3),
     duration_third = interval(date_instar_3, date_instar_4),
     duration_fourth = interval(date_instar_4, date_instar_5),
-    duration_fifth = interval(date_instar_5, pupation_date)
-    # duration_pupa = interval(pupation_date, eclosure_date)
+    duration_fifth = interval(date_instar_5, pupation_date),
+    duration_pupa = interval(pupation_date, eclosure_date)
+  ) %>% 
+  mutate(
+    overall_survival = if_else(is.na(eclosure_date), "N", overall_survival),
+    stage_at_death = if_else((is.na(eclosure_date) & is.na(stage_at_death)), "pupa", stage_at_death)
   )
 
 # rearranging data to make analysis easier
@@ -133,6 +150,7 @@ data <- cleaned_data %>%
     end = int_end(duration),
   )
 
+
 data_no_temp <- data %>% 
   mutate(
     duration = as.integer((end-start) / 86400) #value in days
@@ -141,7 +159,7 @@ data_no_temp <- data %>%
 write_csv(data_no_temp, here::here("data", "data_no_temp.csv"))
 
 # adding degree day data to rearing data
-result <- temp_data %>%
+result <- station_temps_cleaned %>%
   cross_join(data) %>%  # Cross join
   filter(date >= start & date <= end) %>% # Keep only valid date ranges
   group_by(imb_id, stage, start, end) %>%        # Group by unique intervals

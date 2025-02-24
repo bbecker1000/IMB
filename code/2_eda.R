@@ -5,6 +5,7 @@ library(lubridate)
 library(forcats)
 library(ggplot2)
 library(survival)
+library(climate)
 
 dd_data <- read_csv(here::here("data", "dd_data.csv")) %>% 
   mutate(
@@ -20,6 +21,26 @@ dd_data <- read_csv(here::here("data", "dd_data.csv")) %>%
             factor,
             levels = c("egg", "first", "second", "third", "fourth", "fifth", "pupa"),
             ordered = TRUE)
+# 
+# data_no_temp <- read_csv(here::here("data", "data_no_temp.csv")) %>% 
+#   mutate(
+#     imb_id = as.factor(imb_id),
+#     host_plant = as.factor(host_plant),
+#     collection_stage = as.factor(collection_stage),
+#     overall_survival = as.factor(overall_survival),
+#     stage = as.factor(stage),
+#     start = ymd(start),
+#     end = ymd(end)
+#   ) %>% 
+#   mutate_at(vars(contains("stage")), 
+#             factor,
+#             levels = c("egg", "first", "second", "third", "fourth", "fifth", "pupa"),
+#             ordered = TRUE)
+
+dd_data %>% group_by(imb_id) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  count(overall_survival)
 
 
 ggplot(data = dd_data, aes(x = stage)) +
@@ -30,14 +51,55 @@ ggplot(data = dd_data, aes(x = collection_stage)) +
   geom_bar(stat = "count", aes(fill = survival)) +
   theme_bw()
 
-ggplot(data = dd_data, aes(x = total_degree_days)) +
+ggplot(data = dd_data %>% filter(stage != "pupa"), aes(x = total_degree_days)) +
   geom_density(aes(fill = stage), alpha = 0.4) +
   theme_bw()
 
-ggplot(data = dd_data, aes(x = duration)) +
+ggplot(data = dd_data %>% filter(stage != "pupa"), aes(x = duration)) +
   geom_density(aes(fill = stage), alpha = 0.4) +
   theme_bw()
 
 cor(dd_data$duration, dd_data$total_degree_days)
 
 dd_data %>% count(duration)
+
+
+# reading in temperature data from rearing rooms. deleting from data prep because we're using station temps
+threshold <- 10 # really not sure what the temperature threshold is supposed to be...
+# cannot find minimum development threshold for IMB, but i found a source that generally says the min threshold for lots
+# of butterflies is 15
+
+temp_data <- read_csv(here::here("data", "continuous_temps.csv")) %>% 
+  mutate(location = `...1`,
+         date = ymd(date),
+         time = hms(time),
+         temp = (temp.f - 32) * (5/9)) %>% 
+  filter(!str_detect(location, "mystery")) %>% 
+  select(date, time, temp) %>% 
+  group_by(date) %>% 
+  summarise(min = min(temp),
+            max = max(temp)) %>% 
+  ungroup() %>% 
+  mutate(degree_days = pmax(0, ((max+min)/2) - threshold))
+
+
+# testing correlations between rearing room and weather station data to see if extrapolation is reasonable
+# requires getting weatehr station temps by running data prep first
+
+temp_comparisons <- left_join(temp_data, station_temps_cleaned, 
+                              by = join_by(date == date),
+                              suffix = c("_rearing_room", "_weather_station"))
+
+corr <- glm(degree_days_weather_station ~ degree_days_rearing_room,
+            data = temp_comparisons)
+summary(corr)
+
+c <- cor(temp_comparisons$degree_days_rearing_room, temp_comparisons$degree_days_weather_station)
+c
+
+ggplot(data = temp_comparisons, aes(x = degree_days_weather_station, y = degree_days_rearing_room)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "glm") +
+  theme_bw()
+
+
