@@ -148,7 +148,7 @@ data <- cleaned_data %>%
          # !is.na(duration),
          # !is.na(overall_survival)
          ) %>%  
-  select(-invalid_stage, -larval_days) %>% 
+  select(-invalid_stage, -larval_days, -stage_at_death, -collection_stage) %>% 
   mutate(
     start = int_start(duration),
     end = int_end(duration),
@@ -158,32 +158,36 @@ data <- cleaned_data %>%
     !(is.na(start)),
     !(overall_survival == "Y" & is.na(end))
   )
+  # mutate(
+  #   end = if_else(survival == TRUE, end, mean())
+  # )
 
-weird_data <- data %>% group_by(imb_id) %>% 
-  tally(survival == FALSE, sort = TRUE)
 
-
-data_no_temp <- data %>% 
-  mutate(
-    duration = as.integer((end-start) / 86400) #value in days
+mean_durations <- data %>% 
+  filter(!is.na(end)) %>% 
+  group_by(stage) %>% 
+  summarise(
+    avg_length = mean(end-start)
   )
 
-write_csv(data_no_temp, here::here("data", "data_no_temp.csv"))
+data <- left_join(data, mean_durations, by = c("stage")) %>% 
+  mutate(end = if_else(survival == TRUE, end, round_date(start + avg_length, unit = "day"))) %>% 
+  select(-avg_length)
+  
 
 # adding degree day data to rearing data
 result <- station_temps_cleaned %>%
   cross_join(data) %>%  # Cross join
   filter(date >= start & date <= end) %>% # Keep only valid date ranges
   group_by(imb_id, stage, start, end) %>%        # Group by unique intervals
-  summarise(total_degree_days = sum(degree_days), .groups = "drop")
+  summarise(total_degree_days = sum(degree_days, na.rm = TRUE), .groups = "drop")
 
 # Merge summed results back into the original data
 dd_data <- data %>%
   left_join(result, by = c("imb_id", "stage", "start", "end")) %>% 
-  filter(!is.na(total_degree_days)) %>% 
+  # filter(!is.na(total_degree_days)) %>% 
   mutate(
     duration = as.integer((end-start) / 86400) #value in days
   )
-
 
 write_csv(dd_data, here::here("data", "dd_data.csv"))
