@@ -212,8 +212,7 @@ dd_data <- cleaned_data %>%
     end = if_else(end == start, end + 1, end),
     stage = if_else(survival, stage, "death"),
     stage = factor(stage, levels = c("egg", "first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"), ordered = TRUE)
-  ) %>%
-  select(-host_plant, -rearing_year)
+  )
 
   
 write_csv(dd_data, here::here("data", "dd_data.csv"))

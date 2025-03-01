@@ -8,6 +8,19 @@ library(survival)
 library(icenReg)
 library(flexsurv)
 
+
+data <- read_csv(here::here("data", "dd_data.csv")) %>% 
+  mutate(
+    imb_id = as.factor(imb_id),
+    host_plant = as.factor(host_plant),
+    overall_survival = as.factor(overall_survival),
+    stage = as.factor(stage)
+  ) %>% 
+  mutate_at(vars(contains("stage")), 
+            factor,
+            levels = c("first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"),
+            ordered = TRUE)
+
 # gonna try to just use the survival package because it also supports multistate models
 # if using the survival package, groups (i.e. RHS of the model) may not be time dependent
 # so we must use degree days as the time variable
@@ -15,37 +28,11 @@ library(flexsurv)
 # TODO: to make this work, i need starting degree days and ending degree days
 # for now I will just use a null model with time, and if it works I'll modify degree days
 
-# TODO: need to add in "adult" stage. Maybe, if stage == pupa & survival == TRUE, 
 
-test_data # created in data_prep -- I'm using this subset for simplicity
-# stages: 1 --> 2 --> 3 --> 4 (all survive)
-
-fit1 <- survfit(Surv(start, end, stage) ~ 1, data = dd_data, id = imb_id)
+fit1 <- survfit(Surv(start, end, stage) ~ 1, data = data, id = imb_id)
 print(fit1)
 
 fit1$transitions
-
-
-
-
-
-
-
-
-
-data <- read_csv(here::here("data", "dd_data.csv")) %>% 
-  mutate(
-    imb_id = as.factor(imb_id),
-    host_plant = as.factor(host_plant),
-    overall_survival = as.factor(overall_survival),
-    stage = as.factor(stage),
-    start = ymd(start),
-    end = ymd(end)
-  ) %>% 
-  mutate_at(vars(contains("stage")), 
-            factor,
-            levels = c("first", "second", "third", "fourth", "fifth", "pupa"),
-            ordered = TRUE)
 
 #### flexsurv framework 2 ####
 data_fs_2 <- data %>% 
