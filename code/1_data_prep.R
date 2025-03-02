@@ -112,19 +112,16 @@ cleaned_data <- raw_data %>%
             ordered = TRUE) %>% 
   mutate(invalid_stage = (collection_stage > stage) | stage_at_death < stage,
          invalid_stage = if_else(is.na(invalid_stage), FALSE, invalid_stage)) %>% 
-  filter(invalid_stage == FALSE,
-         # !is.na(duration),
-         # !is.na(overall_survival)
-         ) %>%  
+  filter(invalid_stage == FALSE) %>%  
   select(-invalid_stage, -larval_days) %>% 
   mutate(
     start = int_start(duration),
     end = int_end(duration),
-    survival = !is.na(end)
+    survival = !is.na(end),
+    overall_survival = if_else(is.na(end), "N", overall_survival)
   ) %>% 
   filter(
-    !(is.na(start)),
-    !(overall_survival == "Y" & is.na(end))
+    !(is.na(start))
   )
 
 
@@ -200,10 +197,8 @@ dd_data <- cleaned_data %>%
   mutate(
     duration = as.integer((end-start)),
   ) %>% 
-  filter(rearing_year != 2023) %>% 
-         # stage == "first" | stage == "second" | stage == "third" | stage == "fourth" | stage == "fifth" | stage == "pupa") %>% 
+  # filter(rearing_year != 2023) %>% 
   group_by(imb_id) %>% 
-  # filter(n() == 4) %>%
   mutate(collection_day = min(start)) %>% 
   ungroup() %>% 
   mutate(
@@ -212,7 +207,8 @@ dd_data <- cleaned_data %>%
     end = if_else(end == start, end + 1, end),
     stage = if_else(survival, stage, "death"),
     stage = factor(stage, levels = c("egg", "first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"), ordered = TRUE)
-  )
+  ) %>% 
+  filter(collection_stage == "egg")
 
   
 write_csv(dd_data, here::here("data", "dd_data.csv"))

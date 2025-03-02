@@ -18,7 +18,7 @@ data <- read_csv(here::here("data", "dd_data.csv")) %>%
   ) %>% 
   mutate_at(vars(contains("stage")), 
             factor,
-            levels = c("first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"),
+            levels = c("egg", "first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"),
             ordered = TRUE)
 
 # gonna try to just use the survival package because it also supports multistate models
@@ -33,6 +33,11 @@ fit1 <- survfit(Surv(start, end, stage) ~ 1, data = data, id = imb_id)
 print(fit1)
 
 fit1$transitions
+
+plot(fit1, col = c(1, 2, 3, 4, 5, 6, 7, 8), noplot = NULL,
+     xlab = "days after entering the first instar",
+     ylab = "probability in state")
+legend(100, .75, c("1st instar", "2nd instar", "3rd instar", "4th instar", "5th instar", "pupa", "adult", "death"), col = c(1, 2, 3, 4, 5, 6, 8, 1), lty = 1)
 
 #### flexsurv framework 2 ####
 data_fs_2 <- data %>% 
