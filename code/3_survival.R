@@ -13,7 +13,7 @@ data <- read_csv(here::here("data", "dd_data.csv")) %>%
   mutate(
     imb_id = as.factor(imb_id),
     host_plant = as.factor(host_plant),
-    overall_survival = as.factor(overall_survival),
+    # overall_survival = as.factor(overall_survival),
     stage = as.factor(stage)
   ) %>% 
   mutate_at(vars(contains("stage")), 
@@ -29,15 +29,15 @@ data <- read_csv(here::here("data", "dd_data.csv")) %>%
 # for now I will just use a null model with time, and if it works I'll modify degree days
 
 
-fit1 <- survfit(Surv(start, end, stage) ~ 1, data = data, id = imb_id)
+fit1 <- survfit(Surv(start_dd, cum_degree_days, stage2) ~ 1, data = data, id = imb_id)
 print(fit1)
 
 fit1$transitions
 
-plot(fit1, col = c(1, 2, 3, 4, 5, 6, 7, 8), noplot = NULL,
-     xlab = "days after entering the first instar",
+plot(fit1, col = c(1, 2, 3, 4, 5, 6, 7),
+     xlab = "degree days after entering the first instar",
      ylab = "probability in state")
-legend(100, .75, c("1st instar", "2nd instar", "3rd instar", "4th instar", "5th instar", "pupa", "adult", "death"), col = c(1, 2, 3, 4, 5, 6, 8, 1), lty = 1)
+legend(300, .75, c("2nd instar", "3rd instar", "4th instar", "5th instar", "pupa", "adult", "death"), col = c(2, 3, 4, 5, 6, 7, 1), lty = 1)
 
 #### flexsurv framework 2 ####
 data_fs_2 <- data %>% 
