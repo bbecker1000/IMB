@@ -209,7 +209,16 @@ dd_data <- data %>%
     # total_dd = start_dd + degree_days
   ) %>% 
   ungroup() %>% 
-  filter(imb_id != "23SI024")
+  filter(imb_id != "23SI024",
+         imb_id != "18SI029")
 
+
+dd_data <- dd_data %>% 
+  group_by(imb_id) %>% 
+  mutate(to_compare = row_number() == 1,
+  to_remove = if_else(to_compare & stage != "first", "yes", "no"),
+  to_remove = if_else("yes" %in% to_remove, T, F)) %>% 
+  filter(to_remove == FALSE) %>% 
+  select(-to_compare, -to_remove)
   
 write_csv(dd_data, here::here("data", "dd_data.csv"))

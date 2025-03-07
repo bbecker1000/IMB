@@ -7,6 +7,7 @@ library(ggplot2)
 library(survival)
 library(icenReg)
 library(flexsurv)
+library(cowplot)
 
 
 data <- read_csv(here::here("data", "dd_data.csv")) %>% 
@@ -18,8 +19,18 @@ data <- read_csv(here::here("data", "dd_data.csv")) %>%
   ) %>% 
   mutate_at(vars(contains("stage")), 
             factor,
-            levels = c("egg", "first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"),
-            ordered = TRUE)
+            levels = c("first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"),
+            ordered = TRUE) 
+
+larvae_data <- data %>% 
+  group_by(imb_id) %>% 
+  mutate(
+    survives_to_pupa = "pupa" %in% stage2,
+    to_exclude = if_else(survives_to_pupa & stage2 == 'death', TRUE, FALSE)
+  ) %>% 
+  filter(!to_exclude,
+         # stage2 != "pupa", 
+         stage2 != "adult")
 
 # gonna try to just use the survival package because it also supports multistate models
 # if using the survival package, groups (i.e. RHS of the model) may not be time dependent
@@ -28,27 +39,48 @@ data <- read_csv(here::here("data", "dd_data.csv")) %>%
 # TODO: to make this work, i need starting degree days and ending degree days
 # for now I will just use a null model with time, and if it works I'll modify degree days
 
+fit_pre2018 <- survfit(Surv(start, end, stage2) ~ 1, data = data %>% filter(!after_2018), id = imb_id)
+fit_post2018 <- survfit(Surv(start, end, stage2) ~ 1, data = data %>% filter(after_2018), id = imb_id)
 
-fit1 <- survfit(Surv(start_dd, cum_degree_days, stage2) ~ 1, data = data, id = imb_id)
-print(fit1)
+fit_null <- survfit(Surv(start, end, stage2) ~ 1, data = data, id = imb_id)
 
-fit1$transitions
+fit_null_dd <- survfit(Surv(start_dd, cum_degree_days, stage2) ~ 1, data = data, id = imb_id)
 
-plot(fit1, col = c(1, 2, 3, 4, 5, 6, 7),
+fit_2018 <- survfit(Surv(start_dd, cum_degree_days, stage2) ~ after_2018, data = data, id = imb_id)
+
+fit_larvae <- survfit(Surv(start, end, stage2) ~ 1, data = larvae_data, id = imb_id)
+
+fit_larvae_dd <- survfit(Surv(start_dd, cum_degree_days, stage2) ~ 1, data = larvae_data, id = imb_id)
+
+fit_larvae_2018 <- survfit(Surv(start_dd, cum_degree_days, stage2) ~ after_2018, data = larvae_data, id = imb_id)
+
+
+fit <- fit_null # put desired fit here to plot
+print(fit)
+
+fit$transitions
+
+plot(fit, col = c(1, 2, 3, 4, 5, 6, 7), noplot = NULL,
      xlab = "degree days after entering the first instar",
      ylab = "probability in state")
-legend(300, .75, c("2nd instar", "3rd instar", "4th instar", "5th instar", "pupa", "adult", "death"), col = c(2, 3, 4, 5, 6, 7, 1), lty = 1)
-
-#### flexsurv framework 2 ####
-data_fs_2 <- data %>% 
-  mutate(
-    event = as.factor(if_else(survival,"progression", "death")),
-    status = 1
-  ) %>% 
-  filter(duration > 0)
+legend(150, .75, c("1st instar", "2nd instar", "3rd instar", "4th instar", "5th instar", "pupa", "death"), col = c(1, 3, 4, 5, 6, 7, 2), lty = 1)
 
 
-# trying to use flexsurv, hopefully will be able to just to one model
+cox_dd <- coxph(Surv(start_dd, cum_degree_days, stage2) ~ after_2018, data = larvae_data, id = imb_id)
+
+
+cox_time <- coxph(Surv(start, end, stage2) ~ after_2018, data = data, id = imb_id, model = T, x = T, y = T)
+cox_time$transitions
+
+summary(cox_time)
+summary(cox_dd)
+
+
+
+cox.zph(cox_time, transform = "identity")
+  
+
+#### trying to use flexsurv, hopefully will be able to just to one model ####
 
 fs.st1 <- flexsurvmix(Surv(duration, status) ~ 1, event = event,
                     data = data_fs_2 %>% filter(stage == "first"),
