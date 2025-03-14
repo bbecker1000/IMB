@@ -172,8 +172,7 @@ station_temps_cleaned <- station_temps %>%
     mean_temp = mean(temp, na.rm = TRUE)
   ) %>% 
   ungroup() %>% 
-  mutate(degree_days = pmax(0, mean_temp - threshold)) %>% 
-  select(-mean_temp)
+  mutate(degree_days = pmax(0, mean_temp - threshold))
 
 #### combining data with temp data ####
 # adding degree day data to rearing data
@@ -185,6 +184,13 @@ result <- station_temps_cleaned %>%
   ungroup()
   # group_by(imb_id, stage, collection_day, end) %>% 
   # mutate(total_degree_days = sum(degree_days, na.rm = TRUE))
+
+result_mean_temp <-   station_temps_cleaned %>% 
+  cross_join(data) %>%  # Cross join
+  filter(date >= collection_day & date <= end) %>% # Keep only valid date ranges
+  group_by(imb_id, stage, start, end) %>%        # Group by unique intervals
+  summarize(mean_temp = mean(mean_temp, na.rm = TRUE)) %>% 
+  ungroup()
 
 # Merge summed results back into the original data
 dd_data <- data %>%
@@ -210,10 +216,7 @@ dd_data <- data %>%
   ) %>% 
   ungroup() %>% 
   filter(imb_id != "23SI024",
-         imb_id != "18SI029")
-
-
-dd_data <- dd_data %>% 
+         imb_id != "18SI029") %>% 
   group_by(imb_id) %>% 
   mutate(to_compare = row_number() == 1,
   to_remove = if_else(to_compare & stage != "first", "yes", "no"),
@@ -222,3 +225,33 @@ dd_data <- dd_data %>%
   select(-to_compare, -to_remove)
   
 write_csv(dd_data, here::here("data", "dd_data.csv"))
+
+# do the same for the mean temp data
+mean_temp_data <- data %>%
+  left_join(result_mean_temp, by = c("imb_id", "stage", "start", "end")) %>% 
+  mutate(
+    duration = as.integer((end-start))
+  ) %>% 
+  mutate(
+    # this is where I should do starting and ending dd too
+    start = as.integer(start - collection_day) / 86400, # seconds to days
+    end = as.integer(start + duration),
+    start = if_else(end == start, start - 1, start),
+    stage = factor(stage, levels = c("first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"), ordered = TRUE),
+    stage2 = fct_recode(stage, "second" = "first", "third" = "second", "fourth" = "third", "fifth" = "fourth", "pupa" = "fifth", "adult" = "pupa"),
+    after_2018 = if_else(rearing_year >= 2018, TRUE, FALSE)
+  ) %>% 
+  select(-final_stage, -status, -collection_day) %>% 
+  group_by(imb_id) %>% 
+  arrange(imb_id, stage) %>% 
+  ungroup() %>% 
+  filter(imb_id != "23SI024",
+         imb_id != "18SI029") %>% 
+  group_by(imb_id) %>% 
+  mutate(to_compare = row_number() == 1,
+         to_remove = if_else(to_compare & stage != "first", "yes", "no"),
+         to_remove = if_else("yes" %in% to_remove, T, F)) %>% 
+  filter(to_remove == FALSE) %>% 
+  select(-to_compare, -to_remove)
+
+write_csv(mean_temp_data, here::here("data", "mean_temp_data.csv"))

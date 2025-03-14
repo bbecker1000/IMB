@@ -11,15 +11,14 @@ data <- read_csv(here::here("data", "dd_data.csv")) %>%
   mutate(
     imb_id = as.factor(imb_id),
     host_plant = as.factor(host_plant),
-    overall_survival = as.factor(overall_survival),
-    stage = as.factor(stage),
-    start = ymd(start),
-    end = ymd(end)
+    # overall_survival = as.factor(overall_survival),
+    rearing_year = as.integer(rearing_year),
+    stage = as.factor(stage)
   ) %>% 
   mutate_at(vars(contains("stage")), 
             factor,
-            levels = c("egg", "first", "second", "third", "fourth", "fifth", "pupa"),
-            ordered = TRUE)
+            levels = c("first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"),
+            ordered = TRUE) 
 # 
 # data_no_temp <- read_csv(here::here("data", "data_no_temp.csv")) %>% 
 #   mutate(
@@ -35,6 +34,25 @@ data <- read_csv(here::here("data", "dd_data.csv")) %>%
 #             factor,
 #             levels = c("egg", "first", "second", "third", "fourth", "fifth", "pupa"),
 #             ordered = TRUE)
+
+# plot of degree days by year
+temps <- station_temps_cleaned %>% 
+  mutate(year = year(date),
+         month = month(date),
+         day0 = mdy(paste0("01/01/", year)),
+         dayofYear = as.integer(date - day0),
+         degree_days = if_else(degree_days == "NaN", 0, degree_days),
+         year = as.factor(year)) %>% 
+  filter(year != "2024") %>% 
+  group_by(year) %>% 
+  mutate(cum_dd = cumsum(degree_days))
+
+ggplot(data = temps, aes(x = dayofYear, y = cum_dd)) +
+      geom_line(color = "darkgreen", linewidth = 1.3) +
+  facet_wrap(~year) +
+  theme_bw() +
+  labs(x = "day of year (0 = Jan. 1st)", y = "cumulative degree days")
+
 
 dd_data %>% group_by(imb_id) %>% 
   slice(1) %>% 

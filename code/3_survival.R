@@ -15,6 +15,7 @@ data <- read_csv(here::here("data", "dd_data.csv")) %>%
     imb_id = as.factor(imb_id),
     host_plant = as.factor(host_plant),
     # overall_survival = as.factor(overall_survival),
+    rearing_year = as.integer(rearing_year),
     stage = as.factor(stage)
   ) %>% 
   mutate_at(vars(contains("stage")), 
@@ -31,6 +32,38 @@ larvae_data <- data %>%
   filter(!to_exclude,
          # stage2 != "pupa", 
          stage2 != "adult")
+
+
+# new approach -- one model for each transition state with mean temperature and year as covariates
+
+temp_data <- read_csv(here::here("data", "mean_temp_data.csv")) %>% 
+  mutate(
+    imb_id = as.factor(imb_id),
+    host_plant = as.factor(host_plant),
+    # overall_survival = as.factor(overall_survival),
+    rearing_year = as.integer(rearing_year),
+    stage = as.factor(stage)
+  ) %>% 
+  mutate_at(vars(contains("stage")), 
+            factor,
+            levels = c("first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"),
+            ordered = TRUE) 
+
+data_first_instar <- temp_data %>% 
+  group_by(imb_id) %>% 
+  filter(stage == "first" | (
+    stage == "death" & lag(stage) == "first"
+  )) %>% 
+  mutate(status = if_else(stage == "first", 0, 1))
+
+fit_first_instar <- survfit(Surv(start, end, status) ~ 1, data = data_first_instar, id = imb_id)
+print(fit_first_instar)
+
+model_first_instar <- coxph(Surv(duration, status) ~ mean_temp, data = data_first_instar)
+summary(model_first_instar)
+plot(model_first_instar)
+
+z <- cox.zph(model_first_instar, transform = "identity")
 
 # gonna try to just use the survival package because it also supports multistate models
 # if using the survival package, groups (i.e. RHS of the model) may not be time dependent
@@ -54,8 +87,10 @@ fit_larvae_dd <- survfit(Surv(start_dd, cum_degree_days, stage2) ~ 1, data = lar
 
 fit_larvae_2018 <- survfit(Surv(start_dd, cum_degree_days, stage2) ~ after_2018, data = larvae_data, id = imb_id)
 
+fit_year <- survfit(Surv(start, end, stage2) ~ rearing_year, data = larvae_data, id = imb_id)
 
-fit <- fit_null # put desired fit here to plot
+
+fit <- fit_year # put desired fit here to plot
 print(fit)
 
 fit$transitions
@@ -66,10 +101,9 @@ plot(fit, col = c(1, 2, 3, 4, 5, 6, 7), noplot = NULL,
 legend(150, .75, c("1st instar", "2nd instar", "3rd instar", "4th instar", "5th instar", "pupa", "death"), col = c(1, 3, 4, 5, 6, 7, 2), lty = 1)
 
 
-cox_dd <- coxph(Surv(start_dd, cum_degree_days, stage2) ~ after_2018, data = larvae_data, id = imb_id)
+cox_dd <- coxph(Surv(start_dd, cum_degree_days, stage2) ~ rearing_year, data = data, id = imb_id)
 
-
-cox_time <- coxph(Surv(start, end, stage2) ~ after_2018, data = data, id = imb_id, model = T, x = T, y = T)
+cox_time <- coxph(Surv(start, end, stage2) ~ rearing_year, data = data, id = imb_id, model = T, x = T, y = T)
 cox_time$transitions
 
 summary(cox_time)
@@ -78,7 +112,7 @@ summary(cox_dd)
 
 
 cox.zph(cox_time, transform = "identity")
-  
+cox.zph(cox_dd, transform = "identity")
 
 #### trying to use flexsurv, hopefully will be able to just to one model ####
 
