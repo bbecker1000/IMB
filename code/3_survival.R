@@ -8,6 +8,7 @@ library(survival)
 library(icenReg)
 library(flexsurv)
 library(cowplot)
+library(purrr)
 
 
 data <- read_csv(here::here("data", "dd_data.csv")) %>% 
@@ -54,16 +55,63 @@ data_first_instar <- temp_data %>%
   filter(stage == "first" | (
     stage == "death" & lag(stage) == "first"
   )) %>% 
-  mutate(status = if_else(stage == "first", 0, 1))
+  mutate(status = if_else(stage == "first", 1, 0))
 
-fit_first_instar <- survfit(Surv(start, end, status) ~ 1, data = data_first_instar, id = imb_id)
+fit_first_instar <- survfit(Surv(start, end, status) ~ 1, data = data_first_instar)
 print(fit_first_instar)
+plot(fit_first_instar,
+     xlab = "days after entering first instar",
+     ylab = "percent in first instar")
 
-model_first_instar <- coxph(Surv(duration, status) ~ mean_temp, data = data_first_instar)
+model_first_instar <- coxph(Surv(start, end, status) ~ mean_temp, data = data_first_instar)
 summary(model_first_instar)
-plot(model_first_instar)
 
 z <- cox.zph(model_first_instar, transform = "identity")
+print(z)
+plot(z)
+
+model_first_instar <- flexsurvreg(Surv(duration, status) ~ mean_temp, data = data_first_instar, dist = "weibull")
+summary(model_first_instar)
+
+# generating df for plotting
+newdata <- data.frame(mean_temp = c(10, 15, 20))
+time_range <- seq(0, 15, by = 1)
+
+pred_list <- summary(
+  model_first_instar,
+  newdata = newdata,
+  type = "survival",
+  t = time_range,
+  ci = TRUE
+)
+
+pred_df <- map2_dfr(
+  pred_list, 
+  newdata$mean_temp, 
+  ~ data.frame(
+    time       = .x$time,
+    surv       = .x$est,
+    lcl = .x$lcl,
+    ucl = .x$ucl,
+    mean_temp  = .y
+  )
+)
+
+ggplot(pred_df, aes(x = time, y = surv, color = factor(mean_temp))) +
+  geom_line(aes(y = lcl), linetype = "dotted") +
+  geom_line(aes(y = ucl), linetype = "dotted") +
+  # geom_ribbon(aes(ymin = lcl, ymax = ucl, fill = factor(mean_temp)), alpha = 0.4, linewidth = 0) +
+  geom_line() +
+  labs(x = "Days after entering first instar",
+       y = "Percent remaining in first instar",
+       color = "Mean temperature") +
+  theme_bw()
+
+plot(model_first_instar, 
+     newdata = newdata,
+     col = c(1, 2, 3),
+     xlab = "Days after entering first instar",
+     ylab = "Percent in first instar")
 
 # gonna try to just use the survival package because it also supports multistate models
 # if using the survival package, groups (i.e. RHS of the model) may not be time dependent
