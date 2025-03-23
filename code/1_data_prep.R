@@ -185,7 +185,7 @@ result <- station_temps_cleaned %>%
   # group_by(imb_id, stage, collection_day, end) %>% 
   # mutate(total_degree_days = sum(degree_days, na.rm = TRUE))
 
-result_mean_temp <-   station_temps_cleaned %>% 
+result_mean_temp <- station_temps_cleaned %>% 
   cross_join(data) %>%  # Cross join
   filter(date >= collection_day & date <= end) %>% # Keep only valid date ranges
   group_by(imb_id, stage, start, end) %>%        # Group by unique intervals
@@ -211,7 +211,8 @@ dd_data <- data %>%
   group_by(imb_id) %>% 
   arrange(imb_id, stage) %>% 
   mutate(
-    start_dd = if_else(row_number() == 1, 0, lag(cum_degree_days))
+    start_dd = if_else(row_number() == 1, 0, lag(cum_degree_days)),
+    stage = if_else(stage2 == "death", as.character(lag(stage2)), stage)
     # total_dd = start_dd + degree_days
   ) %>% 
   ungroup() %>% 
@@ -244,6 +245,9 @@ mean_temp_data <- data %>%
   select(-final_stage, -status, -collection_day) %>% 
   group_by(imb_id) %>% 
   arrange(imb_id, stage) %>% 
+  mutate(
+    stage = if_else(stage2 == "death", as.character(lag(stage2)), stage)
+  ) %>% 
   ungroup() %>% 
   filter(imb_id != "23SI024",
          imb_id != "18SI029") %>% 

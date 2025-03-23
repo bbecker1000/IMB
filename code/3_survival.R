@@ -30,12 +30,8 @@ larvae_data <- data %>%
     survives_to_pupa = "pupa" %in% stage2,
     to_exclude = if_else(survives_to_pupa & stage2 == 'death', TRUE, FALSE)
   ) %>% 
-  filter(!to_exclude,
-         # stage2 != "pupa", 
-         stage2 != "adult")
+  filter(!to_exclude, stage2 != "adult")
 
-
-# new approach -- one model for each transition state with mean temperature and year as covariates
 
 temp_data <- read_csv(here::here("data", "mean_temp_data.csv")) %>% 
   mutate(
@@ -50,68 +46,146 @@ temp_data <- read_csv(here::here("data", "mean_temp_data.csv")) %>%
             levels = c("first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"),
             ordered = TRUE) 
 
-data_first_instar <- temp_data %>% 
-  group_by(imb_id) %>% 
-  filter(stage == "first" | (
-    stage == "death" & lag(stage) == "first"
-  )) %>% 
-  mutate(status = if_else(stage == "first", 1, 0))
+subset_data <- function(stage_name) {
+  temp_data %>% 
+    group_by(imb_id) %>% 
+    filter(stage == stage_name) %>% 
+    mutate(status = if_else(stage2 == "death", 0, 1))
+}
 
-fit_first_instar <- survfit(Surv(start, end, status) ~ 1, data = data_first_instar)
-print(fit_first_instar)
-plot(fit_first_instar,
-     xlab = "days after entering first instar",
-     ylab = "percent in first instar")
-
-model_first_instar <- coxph(Surv(start, end, status) ~ mean_temp, data = data_first_instar)
-summary(model_first_instar)
-
-z <- cox.zph(model_first_instar, transform = "identity")
-print(z)
-plot(z)
+data_first_instar <- subset_data(stage_name = "first")
+data_second_instar <- subset_data("second")
+data_third_instar <- subset_data("third")
+data_fourth_instar <- subset_data("fourth")
+data_fifth_instar <- subset_data("fifth")
+data_pupa <- subset_data("pupa")
 
 model_first_instar <- flexsurvreg(Surv(duration, status) ~ mean_temp, data = data_first_instar, dist = "weibull")
-summary(model_first_instar)
+m1 <- tidy(model_first_instar, conf.int = TRUE, transform = "coefs.exp") %>% mutate(stage = "First")
 
-# generating df for plotting
-newdata <- data.frame(mean_temp = c(10, 15, 20))
-time_range <- seq(0, 15, by = 1)
+model_second_instar <- flexsurvreg(Surv(duration, status) ~ mean_temp, data = data_second_instar, dist = "weibull")
+m2 <- tidy(model_second_instar, conf.int = TRUE, transform = "coefs.exp") %>% mutate(stage = "Second")
 
-pred_list <- summary(
-  model_first_instar,
-  newdata = newdata,
-  type = "survival",
-  t = time_range,
-  ci = TRUE
-)
+model_third_instar <- flexsurvreg(Surv(duration, status) ~ mean_temp, data = data_third_instar, dist = "weibull")
+m3 <- tidy(model_third_instar, conf.int = TRUE, transform = "coefs.exp") %>% mutate(stage = "Third")
 
-pred_df <- map2_dfr(
-  pred_list, 
-  newdata$mean_temp, 
-  ~ data.frame(
-    time       = .x$time,
-    surv       = .x$est,
-    lcl = .x$lcl,
-    ucl = .x$ucl,
-    mean_temp  = .y
+model_fourth_instar <- flexsurvreg(Surv(duration, status) ~ mean_temp, data = data_fourth_instar, dist = "weibull")
+m4 <- tidy(model_fourth_instar, conf.int = TRUE, transform = "coefs.exp") %>% mutate(stage = "Fourth")
+
+model_fifth_instar <- flexsurvreg(Surv(duration, status) ~ mean_temp, data = data_fifth_instar, dist = "weibull")
+m5 <- tidy(model_fifth_instar, conf.int = TRUE, transform = "coefs.exp") %>% mutate(stage = "Fifth")
+
+model_pupa <- flexsurvreg(Surv(duration, status) ~ mean_temp, data = data_pupa, dist = "weibull")
+mp <- tidy(model_pupa, conf.int = TRUE, transform = "coefs.exp") %>% mutate(stage = "Pupa")
+
+model_res <- rbind(m1, m2, m3, m4, m5, mp) %>% 
+  filter(term == "mean_temp") %>% 
+  mutate(stage = factor(stage, levels = c("First", "Second", "Third", "Fourth", "Fifth", "Pupa"), ordered = TRUE))
+
+ggplot(model_res, aes(x = estimate, y = stage)) +
+  geom_vline(xintercept = 1.00, col = "red", linetype = 2) +
+  geom_segment(aes(x = conf.low, xend = conf.high), col = "darkgrey") +
+  geom_point(size = 3, col = "darkgreen") +
+  labs(x = "Hazard Ratio", y = "Stage") +
+  theme_bw(base_size = 15) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+plot_model_fn <- function(model_to_plot, stage = "", temps = c(12, 14, 16)) {
+  # generating df for plotting
+  newdata <- data.frame(mean_temp = temps)
+  time_range <- seq(0, 15, by = 1)
+  
+  pred_list <- summary(
+    model_to_plot,
+    newdata = newdata,
+    type = "survival",
+    t = time_range,
+    ci = TRUE
   )
-)
+  
+  pred_df <- map2_dfr(
+    pred_list, 
+    newdata$mean_temp, 
+    ~ data.frame(
+      time       = .x$time,
+      surv       = .x$est,
+      lcl = .x$lcl,
+      ucl = .x$ucl,
+      mean_temp  = .y
+    )
+  )
+  
+  ggplot(pred_df, aes(x = time, y = surv, color = factor(mean_temp))) +
+    geom_line(aes(y = lcl), linetype = "dotted") +
+    geom_line(aes(y = ucl), linetype = "dotted") +
+    # geom_ribbon(aes(ymin = lcl, ymax = ucl, fill = factor(mean_temp)), alpha = 0.4, linewidth = 0) +
+    geom_line() +
+    labs(x = paste0("Days after entering ", stage, " instar"),
+         y = "Percent remaining in instar",
+         color = "Mean temperature") +
+    theme_bw()
+  }
 
-ggplot(pred_df, aes(x = time, y = surv, color = factor(mean_temp))) +
-  geom_line(aes(y = lcl), linetype = "dotted") +
-  geom_line(aes(y = ucl), linetype = "dotted") +
-  # geom_ribbon(aes(ymin = lcl, ymax = ucl, fill = factor(mean_temp)), alpha = 0.4, linewidth = 0) +
-  geom_line() +
-  labs(x = "Days after entering first instar",
-       y = "Percent remaining in first instar",
-       color = "Mean temperature") +
+p1 <- plot_model_fn(model_first_instar, "first")
+p2 <- plot_model_fn(model_second_instar, "second")
+p3 <- plot_model_fn(model_third_instar, "third")
+p4 <- plot_model_fn(model_fourth_instar, "fourth")
+p5 <- plot_model_fn(model_fifth_instar, "fifth")
+
+legend <- get_legend(p1)
+
+plot_grid(
+  p1 + theme(legend.position = "none"),
+  p2 + theme(legend.position = "none"), 
+  p3 + theme(legend.position = "none"), 
+  p4 + theme(legend.position = "none"), 
+  p5 + theme(legend.position = "none"),
+  legend)
+
+# comparisons of mean temps for surviving vs non surviving individuals in each stage
+t1 <- ggplot(data_first_instar, aes(x = mean_temp, fill = stage2)) +
+  geom_density(alpha = 0.4) +
+  labs(title = "First instar") +
+  xlim(9, 25) +
   theme_bw()
 
-plot(model_first_instar, 
-     newdata = newdata,
-     col = c(1, 2, 3),
-     xlab = "Days after entering first instar",
-     ylab = "Percent in first instar")
+t2 <- ggplot(data_second_instar, aes(x = mean_temp, fill = stage2)) +
+  geom_density(alpha = 0.4) +  
+  labs(title = "Second instar") +
+  xlim(9, 25) +
+  theme_bw()
+
+t3 <- ggplot(data_third_instar, aes(x = mean_temp, fill = stage2)) +
+  geom_density(alpha = 0.4) +
+  labs(title = "Third instar") +
+  xlim(9, 25) +
+  theme_bw()
+
+t4 <- ggplot(data_fourth_instar, aes(x = mean_temp, fill = stage2)) +
+  geom_density(alpha = 0.4) +
+  labs(title = "Fourth instar") +
+  xlim(9, 25) +
+  theme_bw()
+
+t5 <- ggplot(data_fifth_instar, aes(x = mean_temp, fill = stage2)) +
+  geom_density(alpha = 0.4) +
+  labs(title = "Fifth instar") +
+  xlim(9, 25) +
+  theme_bw()
+
+tp <- ggplot(data_pupa, aes(x = mean_temp, fill = stage2)) +
+  geom_density(alpha = 0.4) +
+  labs(title = "Pupa") +
+  xlim(9, 25) +
+  theme_bw()
+
+
+plot_grid(t1 + theme(legend.position = "none"), 
+          t2 + theme(legend.position = "none") + labs(y = NULL), 
+          t3 + theme(legend.position = "none") + labs(y = NULL), 
+          t4 + theme(legend.position = "none"), 
+          t5 + theme(legend.position = "none") + labs(y = NULL), 
+          tp + theme(legend.position = "none") + labs(y = NULL))
 
 # gonna try to just use the survival package because it also supports multistate models
 # if using the survival package, groups (i.e. RHS of the model) may not be time dependent

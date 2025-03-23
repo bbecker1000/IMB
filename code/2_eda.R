@@ -19,21 +19,25 @@ data <- read_csv(here::here("data", "dd_data.csv")) %>%
             factor,
             levels = c("first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"),
             ordered = TRUE) 
-# 
-# data_no_temp <- read_csv(here::here("data", "data_no_temp.csv")) %>% 
-#   mutate(
-#     imb_id = as.factor(imb_id),
-#     host_plant = as.factor(host_plant),
-#     collection_stage = as.factor(collection_stage),
-#     overall_survival = as.factor(overall_survival),
-#     stage = as.factor(stage),
-#     start = ymd(start),
-#     end = ymd(end)
-#   ) %>% 
-#   mutate_at(vars(contains("stage")), 
-#             factor,
-#             levels = c("egg", "first", "second", "third", "fourth", "fifth", "pupa"),
-#             ordered = TRUE)
+
+temp_data <- read_csv(here::here("data", "mean_temp_data.csv")) %>% 
+  mutate(
+    imb_id = as.factor(imb_id),
+    host_plant = as.factor(host_plant),
+    # overall_survival = as.factor(overall_survival),
+    rearing_year = as.integer(rearing_year),
+    stage = as.factor(stage)
+  ) %>% 
+  mutate_at(vars(contains("stage")), 
+            factor,
+            levels = c("first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"),
+            ordered = TRUE) 
+
+# plot of mean temperatures for each stage
+mean_temp_plot <- ggplot(data = temp_data, aes(x = mean_temp, fill = stage)) +
+  geom_density(alpha = 0.4) +
+  theme_bw()
+mean_temp_plot
 
 # plot of degree days by year
 temps <- station_temps_cleaned %>% 
