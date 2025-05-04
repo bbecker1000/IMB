@@ -43,21 +43,21 @@ raw_data <- read_csv(here::here("data", "IMB_RearingReleaseData.csv")) %>%
                                        third = c("Third", "3rd"),
                                        fourth = c("Fourth"),
                                        fifth = c("Fifth", "5th"),
-                                       pupa = c("pupa", "Pupa", "pupae")
-         ))
+                                       pupa = c("pupa", "Pupa", "pupae")),
+         collection_stage = if_else(!is.na(hatch_date), "egg", collection_stage)
+         )
 
 ##### removing illogical data, adding durations for analysis, rearranging data to make analysis easier ####
 cleaned_data <- raw_data %>% 
-  filter(collection_stage == "egg",
-        !is.na(collection_date),
-         is.na(hatch_date) | collection_date <= hatch_date,
+  filter(is.na(hatch_date) | collection_date <= hatch_date,
          is.na(hatch_date) | is.na(date_instar_2) | hatch_date <= date_instar_2,
          is.na(date_instar_2) | is.na(date_instar_3) | date_instar_2 <= date_instar_3,
          is.na(date_instar_3) | is.na(date_instar_4) | date_instar_3 <= date_instar_4,
          is.na(date_instar_4) | is.na(date_instar_5) | date_instar_4 <= date_instar_5,
          is.na(date_instar_5) | is.na(pupation_date) | date_instar_5 <= pupation_date,
          is.na(pupation_date) | is.na(eclosure_date) | pupation_date <= eclosure_date,
-         !(is.na(date_instar_2) & is.na(date_instar_3) & is.na(date_instar_4) & is.na(date_instar_5))) %>% 
+         !(is.na(hatch_date) & is.na(date_instar_2) & is.na(date_instar_3) & is.na(date_instar_4) & is.na(date_instar_5))) %>% 
+  filter(rearing_year != 2013) %>% 
   mutate(
     # duration_egg = interval(collection_date, hatch_date),
     duration_first = interval(hatch_date, date_instar_2),
@@ -132,7 +132,7 @@ mean_durations <- data %>%
   summarise(avg_length = mean(end-start))
 
 data <- left_join(data, mean_durations, by = c("stage")) %>% 
-  mutate(end = if_else(status != "died", end, round_date(start + avg_length, unit = "day")),
+  mutate(end = if_else(status != "died", end, if_else(mispupation == "Y", round_date(start + ddays(1)), round_date(start + avg_length, unit = "day"))),
          stage = if_else(status == "died", "death", stage),
          stage = factor(stage, levels = c("egg", "first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"), ordered = TRUE),
          status = as_factor(status),
@@ -240,22 +240,26 @@ mean_temp_data <- data %>%
     start = if_else(end == start, start - 1, start),
     stage = factor(stage, levels = c("first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"), ordered = TRUE),
     stage2 = fct_recode(stage, "second" = "first", "third" = "second", "fourth" = "third", "fifth" = "fourth", "pupa" = "fifth", "adult" = "pupa"),
-    after_2018 = if_else(rearing_year >= 2018, TRUE, FALSE)
+    after_2018 = if_else(rearing_year >= 2018, TRUE, FALSE),
+    after_june = if_else(month(collection_day) > 5, TRUE, FALSE)
   ) %>% 
   select(-final_stage, -status, -collection_day) %>% 
   group_by(imb_id) %>% 
   arrange(imb_id, stage) %>% 
   mutate(
-    stage = if_else(stage2 == "death", as.character(lag(stage2)), stage)
+    stage = if_else(stage2 == "death", as.character(lag(stage2)), stage),
+    stage = if_else(is.na(stage), "first", stage)
   ) %>% 
   ungroup() %>% 
-  filter(imb_id != "23SI024",
-         imb_id != "18SI029") %>% 
+  filter(imb_id != "23SI024" # NA value in the middle of progression
+         # imb_id != "18SI029"# died after 4th instar
+         ) %>% 
   group_by(imb_id) %>% 
   mutate(to_compare = row_number() == 1,
          to_remove = if_else(to_compare & stage != "first", "yes", "no"),
          to_remove = if_else("yes" %in% to_remove, T, F)) %>% 
   filter(to_remove == FALSE) %>% 
-  select(-to_compare, -to_remove)
+  select(-to_compare, -to_remove) %>% 
+  filter(!(stage == "pupa" & rearing_year == 2024))
 
 write_csv(mean_temp_data, here::here("data", "mean_temp_data.csv"))

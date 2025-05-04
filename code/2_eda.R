@@ -39,6 +39,12 @@ mean_temp_plot <- ggplot(data = temp_data, aes(x = mean_temp, fill = stage)) +
   theme_bw()
 mean_temp_plot
 
+# plot of mean temperatures for each stage
+mean_temp_plot <- ggplot(data = temp_data %>% filter(stage == "pupa"), aes(x = mean_temp, fill = stage2)) +
+  geom_density(alpha = 0.4) +
+  theme_bw()
+mean_temp_plot
+
 # plot of degree days by year
 temps <- station_temps_cleaned %>% 
   mutate(year = year(date),
