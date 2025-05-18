@@ -39,6 +39,12 @@ mean_temp_plot <- ggplot(data = temp_data, aes(x = mean_temp, fill = stage)) +
   theme_bw()
 mean_temp_plot
 
+duration_temp_plot <- ggplot(temp_data %>% filter(stage2 != "death", stage != "pupa") %>% mutate(mean_temp = round(mean_temp)), aes(x = duration, y = stage)) +
+  geom_density(alpha = 0.9) +
+  # geom_smooth(method = "lm") +
+  theme_bw()
+duration_temp_plot
+
 # plot of mean temperatures for each stage
 mean_temp_plot <- ggplot(data = temp_data %>% filter(stage == "pupa"), aes(x = mean_temp, fill = stage2)) +
   geom_density(alpha = 0.4) +

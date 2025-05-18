@@ -48,7 +48,8 @@ temp_data <- read_csv(here::here("data", "mean_temp_data.csv")) %>%
             factor,
             levels = c("first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"),
             ordered = TRUE) %>% 
-  filter(!(stage == "pupa" & rearing_year == 2024))
+  filter(!(stage == "pupa" & rearing_year == 2024),
+         !(stage == "pupa" & duration ==1))
 
 #### survivorship model -- logistic regression ####
 
@@ -64,23 +65,18 @@ surv_data <- temp_data %>%
 mean_temp_sd <- sd(surv_data$mean_temp)
 mean_temp_mean <- mean(surv_data$mean_temp)
 
-plot_data <- surv_data %>% 
-  group_by(stage, survival, after_june) %>% 
-  summarize(count = n()) %>% 
-  ungroup() %>% 
-  group_by(stage, after_june) %>% 
-  mutate(percent_surv = count / sum(count)) %>% 
-  filter(survival == 1)
-
-ggplot(plot_data, aes(x = stage, y = percent_surv)) +
-         geom_col(aes(fill = after_june), alpha = 0.9, position = "dodge") +
-  scale_size_continuous(limits = c(0.7, 1), range = c(0.02,20), breaks = c(0.75, 1.0)) +
-  theme_bw()
+# plot_data <- surv_data %>% 
+#   group_by(stage, survival, after_june) %>% 
+#   summarize(count = n()) %>% 
+#   ungroup() %>% 
+#   group_by(stage, after_june) %>% 
+#   mutate(percent_surv = count / sum(count)) %>% 
+#   filter(survival == 1)
 
 surv_model <- glmer(survival ~ 
                       after_2018 +
                       after_june +
-                      mean_temp_scaled * stage +
+                      stage +
                       (1 | rearing_year),
                     data = surv_data,
                     family = binomial,
@@ -98,107 +94,165 @@ plot_model(surv_model, type = "est", show.values = TRUE, value.offset = .3, vlin
   theme_bw() +
   labs(title = NULL)
 
-plot_model(surv_model_pupae, type = "est", show.values = TRUE, value.offset = .3, vline.color = "grey70", vline.linetype = "dashed") + 
-  theme_bw() +
-  labs(title = NULL)
-
 pred_grid <- expand.grid(
-  mean_temp_scaled = seq(-2.5, 2.5, by = 0.1),
   after_2018 = unique(surv_data$after_2018),
   after_june = unique(surv_data$after_june),
   stage = unique(surv_data$stage)
-) %>% 
-  mutate(mean_temp_unscaled = (mean_temp_scaled * mean_temp_sd) + mean_temp_mean)
-
+)
 pred_grid$predicted <- predict(surv_model, newdata = pred_grid, type = "response", re.form = NA)
 
+plot_data <- pred_grid %>% 
+  filter(after_2018 == "TRUE") %>% 
+  arrange(after_june) %>% 
+  mutate(after_june = if_else(after_june == "TRUE", "During/After June", "Before June"))
+
 # Plot predicted probabilities
-ggplot(pred_grid %>% filter(after_2018 == "TRUE"), aes(x = mean_temp_unscaled, y = predicted, color = stage)) +
-  geom_line(aes(linetype = after_june)) +
-  # geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = after_2018), alpha = 0.2, color = NA) +
-  labs(x = "Mean Temperature (°C)",
-       y = "Predicted Probability of Survival") +
+ggplot(plot_data, aes(x = stage, y = predicted, group = after_june)) +
+  geom_point(aes(color = after_june)) +
+  geom_segment(aes(xend = if_else(stage == "pupa", stage, lead(stage)), yend = if_else(stage == "pupa", predicted, lead(predicted)), color = after_june)) +
+  labs(x = "Developmental Stage",
+       y = "Predicted Probability of Survival",
+       color = "Collection Date") +
   theme_bw()
 
-# Generate predicted probabilities
-preds <- ggpredict(surv_model, terms = c("after_2018", "after_june"))
+plot_data <- pred_grid %>% 
+  filter(after_june == "FALSE") %>% 
+  arrange(after_2018) %>% 
+  mutate(after_2018 = if_else(after_2018 == "TRUE", "During/After 2018", "Before 2018"))
 
-emm <- emmeans(surv_model, ~ after_2018 + after_june, type = "response")
-emm_df <- as.data.frame(emm)
+# Plot predicted probabilities
+ggplot(plot_data, aes(x = stage, y = predicted, group = after_2018)) +
+  geom_point(aes(color = after_2018)) +
+  geom_segment(aes(xend = if_else(stage == "pupa", stage, lead(stage)), yend = if_else(stage == "pupa", predicted, lead(predicted)), color = after_2018)) +
+  labs(x = "Developmental Stage",
+       y = "Predicted Probability of Survival",
+       color = "Collection Date") +
+  theme_bw()
 
-ggplot(emm_df, aes(x = after_2018, y = prob)) +
-  geom_col(position = "dodge") +
-  labs(x = "After 2018", y = "Estimated Survival Probability") +
-  theme_minimal()
+ggplot(surv_data_pupae, aes(x = duration)) +
+  geom_bar(aes(fill = stage2), alpha = 0.6) +
+  theme_bw()
 
-ggplot(emm_df, aes(x = after_june, y = prob)) +
-  geom_col(position = "dodge") +
-  labs(x = "After June", y = "Estimated Survival Probability") +
-  theme_minimal()
+pd2 <- surv_data_pupae %>% filter(stage2 == "adult", rearing_year != 2023) %>% mutate(t2 = as.ordered(round(mean_temp, 1)))
 
-######## separate pupae model to make sure temperature relationship still holds (survivorship model) ########
-surv_data_pupae <- temp_data %>% 
-  mutate(survival = as.factor(if_else(stage2 == "death", 0, 1)),
-         stage = factor(stage, ordered = F)) %>% 
-  filter(stage == "pupa") %>% 
-  mutate(
-    rearing_year_scaled = scale(rearing_year),
-    mean_temp_scaled = scale(mean_temp),
-    after_2018 = as.factor(after_2018),
-    after_june = as.factor(after_june))
+ggplot(pd2, aes(x = duration)) +
+  geom_bar(aes(fill = t2)) +
+  facet_wrap(~rearing_year) +
+  theme_bw()
 
-# for unscaling later
-mean_temp_sd_pupae <- sd(surv_data_pupae$mean_temp)
-mean_temp_mean_pupae <- mean(surv_data_pupae$mean_temp)
+ggplot(pd2, aes(x = duration, y = mean_temp)) +
+  geom_point(aes(color = factor(rearing_year)), alpha = 0.5) +
+  geom_smooth(aes(color = factor(rearing_year)), se = F) +
+  theme_bw() +
+  labs(x = "Duration of pupal stage",
+       y = "Mean temperature",
+       color = "Rearing year")
 
-surv_model_pupae <- glmer(survival ~ 
-                            after_2018 +
-                            after_june +
-                            mean_temp_scaled +
-                            (1 | rearing_year),
-                          data = surv_data_pupae,
-                          family = binomial,
-                          control = glmerControl(optimizer="bobyqa", optCtrl = list(maxfun = 100000))
-)
-summary(surv_model_pupae)
-
+ggplot(temp_data %>% filter(stage != "pupa", stage2 != "death"), aes(x = duration, y = mean_temp)) +
+  geom_jitter(aes(color = stage), alpha = 0.1, size = 2) +
+  geom_smooth(aes(color = stage), method = "lm", se = F) +
+  theme_bw() +
+  labs(x = "Duration of instar stage",
+       y = "Mean temperature",
+       color = "Larval instar")
 
 
 #### duration of stages + temperature model -- AFT ####
 # TODO: try to make this multi state
+library(mstate)
 
+states <- c("first", "second", "third", "fourth", "fifth", "pupa", "death")
 
-multi_state_data <- temp_data %>%
-  filter(!is.na(stage2)) %>%
+tmat <- transMat(
+  list(
+    c(2, 7),    # from first
+    c(3, 7),     # from second
+    c(4, 7),    # from third
+    c(5),     # from fourth --> only to 5th instar to make model converge (hopefully lol)
+    c(6, 7),      # from fifth
+    c(),              # from pupa
+    c()                      # death is absorbing
+  ),
+  names = states
+)
+
+tmat
+
+# Rename to match `msprep()` naming convention
+msdata <- multi_state_data %>%
+  filter(stage %in% states, stage2 %in% states) %>%
   mutate(
-    from_stage = stage,
-    to_stage = stage2,
-    status = if_else(stage2 == "death", 0, 1) # 1 = successfully transitioned, 0 = censored (death)
+    from = as.character(stage),
+    to = as.character(stage2),
+    id = imb_id
   )
 
-keep_stages <- multi_state_data %>%
-  group_by(from_stage) %>%
-  summarize(deaths = sum(status == 0)) %>%
-  filter(deaths > 5) %>%
-  pull(from_stage)
+# Recode from and to as factors with correct levels
+msdata$from <- factor(msdata$from, levels = states)
+msdata$to   <- factor(msdata$to,   levels = states)
 
-multi_state_data_filtered <- multi_state_data %>%
-  filter(from_stage %in% keep_stages)
+msdata$trans <- tmat[cbind(as.numeric(msdata$from), as.numeric(msdata$to))]
 
-multi_state_data_filtered %>%
-  summarize(
-    na_duration = sum(duration == 0),
-    na_status = sum(status == 0),
-    na_mean_temp = sum(mean_temp == 0)
-  )
+msdata <- msdata %>% 
+  filter(!is.na(trans))
 
-multi_state_model <- flexsurvreg(
-  Surv(duration, status) ~ mean_temp + strata(from_stage),
-  data = multi_state_data_filtered %>% filter(stage != "pupa"),
+fit <- flexsurvreg(
+  Surv(start, end, status) ~ mean_temp + factor(stage, ordered = F),
+  data = msdata,
   dist = "weibull"
 )
-multi_state_model
+fit
+plot(fit)
 
+# Define temperatures at which you want to plot survival curves
+temps <- c(10, 15, 20)  # example temperatures in degrees
+
+# Define stages to plot (all levels except baseline)
+stages <- levels(factor(msdata$stage))
+
+# Create a new data frame for predictions with all combinations of temp and stage
+newdata <- expand.grid(
+  mean_temp = temps,
+  stage = stages
+)
+
+# Predict the survival curves for each row in newdata
+# Use the flexsurv package's summary.flexsurvreg with type = "survival"
+# and specify a sequence of times for the survival curve
+
+time_seq <- seq(0, 50, by = 0.5)  # adjust max time based on your data
+
+# For each row in newdata, get survival probabilities over time
+surv_list <- lapply(1:nrow(newdata), function(i) {
+  summary(fit, newdata = newdata[i, ], type = "survival", t = time_seq)[[1]] %>%
+    as.data.frame() %>%
+    mutate(
+      time = time_seq,
+      mean_temp = newdata$mean_temp[i],
+      stage = newdata$stage[i]
+    )
+})
+
+# Combine all survival data frames
+surv_df <- bind_rows(surv_list)
+
+# Plot using ggplot2
+ggplot(surv_df, aes(x = time, y = est, color = factor(stage), linetype = factor(mean_temp))) +
+  geom_line(size = 1) +
+  labs(
+    x = "Time",
+    y = "Survival Probability",
+    color = "Stage",
+    linetype = "Mean Temperature (°C)",
+    title = "Predicted Survival Curves by Stage and Temperature"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "right"
+  )
+
+
+#### duration models that actually work -- one for each stage ####
 # separate models for each stage
 subset_data <- function(stage_name) {
   temp_data %>% 
@@ -246,7 +300,7 @@ ggplot(res, aes(x = estimate, y = stage)) +
   theme_bw(base_size = 15) +
   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
 
-plot_model_fn <- function(model_to_plot, stage = "", temps = c(12, 14, 16), days = 15) {
+plot_model_fn <- function(model_to_plot, stage = "", temps = c(11, 14, 17), days = 15, ylab = NULL) {
   # generating df for plotting
   newdata <- data.frame(mean_temp = temps)
   time_range <- seq(0, days, by = 1)
@@ -277,21 +331,21 @@ plot_model_fn <- function(model_to_plot, stage = "", temps = c(12, 14, 16), days
     # geom_ribbon(aes(ymin = lcl, ymax = ucl, fill = factor(mean_temp)), alpha = 0.4, linewidth = 0) +
     geom_line() +
     labs(x = paste0("Days after entering stage"),
-         y = "Percent remaining in stage",
+         y = ylab,
          color = "Mean temperature",
          title = stage) +
     theme_bw()
 }
 
-p1 <- plot_model_fn(model_first_instar, "First instar")
+p1 <- plot_model_fn(model_first_instar, "First instar", ylab = "Percent remaining in stage")
 p2 <- plot_model_fn(model_second_instar, "Second instar")
 p3 <- plot_model_fn(model_third_instar, "Third instar")
-p4 <- plot_model_fn(model_fourth_instar, "Fourth instar")
+p4 <- plot_model_fn(model_fourth_instar, "Fourth instar", ylab = "Percent remaining in stage")
 p5 <- plot_model_fn(model_fifth_instar, "Fifth instar")
 
 legend <- get_legend(p1)
 
-plot_grid(
+cowplot::plot_grid(
   p1 + theme(legend.position = "none"),
   p2 + theme(legend.position = "none"), 
   p3 + theme(legend.position = "none"), 
@@ -430,15 +484,15 @@ fit_larvae_2018 <- survfit(Surv(start_dd, cum_degree_days, stage2) ~ after_2018,
 # fit_year <- survfit(Surv(start, end, stage2) ~ rearing_year, data = larvae_data, id = imb_id)
 
 
-fit <- fit_null # put desired fit here to plot
+fit <- fit_larvae # put desired fit here to plot
 print(fit)
 
 fit$transitions
 
-plot(fit, col = c(1, 2, 3, 4, 5, 6, 7), noplot = NULL,
-     xlab = "degree days after entering the first instar",
-     ylab = "probability in state")
-legend(150, .75, c("1st instar", "2nd instar", "3rd instar", "4th instar", "5th instar", "pupa", "death"), col = c(1, 3, 4, 5, 6, 7, 2), lty = 1)
+plot(fit, col = c(1, 2, 3, 4, 5, 6, 1, 7), noplot = NULL,
+     xlab = "Days after entering the first instar",
+     ylab = "Probability in state")
+legend(35, .75, c("1st instar", "2nd instar", "3rd instar", "4th instar", "5th instar", "pupa", "death"), col = c(1, 2, 3, 4, 5, 6, 7), lty = 1)
 
 
 cox_dd <- coxph(Surv(start_dd, cum_degree_days, stage2) ~ rearing_year, data = data, id = imb_id)
