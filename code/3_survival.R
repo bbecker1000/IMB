@@ -14,32 +14,10 @@ library(ggeffects)
 library(sjPlot)
 
 #### reading in data ####
-data <- read_csv(here::here("data", "dd_data.csv")) %>% 
-  mutate(
-    imb_id = as.factor(imb_id),
-    host_plant = as.factor(host_plant),
-    rearing_year = as.integer(rearing_year),
-    stage = as.factor(stage)
-  ) %>% 
-  mutate_at(vars(contains("stage")), 
-            factor,
-            levels = c("first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"),
-            ordered = TRUE) 
-
-larvae_data <- data %>% 
-  group_by(imb_id) %>% 
-  mutate(
-    survives_to_pupa = "pupa" %in% stage2,
-    to_exclude = if_else(survives_to_pupa & stage2 == 'death', TRUE, FALSE)
-  ) %>% 
-  filter(!to_exclude, stage2 != "adult")
-
-
 temp_data <- read_csv(here::here("data", "mean_temp_data.csv")) %>% 
   mutate(
     imb_id = as.factor(imb_id),
     host_plant = as.factor(host_plant),
-    # overall_survival = as.factor(overall_survival),
     rearing_year = as.integer(rearing_year),
     stage = as.factor(stage)
   ) %>% 
@@ -50,8 +28,23 @@ temp_data <- read_csv(here::here("data", "mean_temp_data.csv")) %>%
   filter(!(stage == "pupa" & rearing_year == 2024),
          !(stage == "pupa" & duration ==1))
 
+#### survfit plots for visualization of stages through time ####
+
+fit_null <- survfit(Surv(start, end, stage2) ~ 1, data = surv_data, id = imb_id)
+fit_larvae <- survfit(Surv(start, end, stage2) ~ 1, data = surv_data %>% filter(stage != "pupa"), id = imb_id)
+
+fit <- fit_larvae # put desired fit here to plot
+# fit <- fit_null
+
+plot(fit, col = c(1, 2, 3, 4, 5, 6, 1, 7), noplot = NULL,
+     xlab = "Days after entering the first instar",
+     ylab = "Probability in state")
+legend(35, .75, c("1st instar", "2nd instar", "3rd instar", "4th instar", "5th instar", "pupa", "death"), col = c(1, 2, 3, 4, 5, 6, 7), lty = 1)
+
+
 #### survivorship model -- logistic regression ####
 
+# formatting data for model
 surv_data <- temp_data %>% 
   mutate(survival = as.factor(if_else(stage2 == "death", 0, 1)),
          stage = factor(stage, ordered = F),
@@ -64,6 +57,7 @@ surv_data <- temp_data %>%
 mean_temp_sd <- sd(surv_data$mean_temp)
 mean_temp_mean <- mean(surv_data$mean_temp)
 
+# glmer model
 surv_model <- glmer(survival ~ 
                       after_2018 +
                       after_june +
@@ -75,10 +69,12 @@ surv_model <- glmer(survival ~
                     )
 summary(surv_model)
 
+# forest plot of odds ratios by stage, after 2018, and after june (using sjPlot)
 plot_model(surv_model, type = "est", show.values = TRUE, value.offset = .3, vline.color = "grey70", vline.linetype = "dashed") + 
   theme_bw() +
   labs(title = NULL)
 
+# plots showing likelihood of survival through each stage depending on collection month and year
 pred_grid <- expand.grid(
   after_2018 = unique(surv_data$after_2018),
   after_june = unique(surv_data$after_june),
@@ -91,7 +87,6 @@ plot_data <- pred_grid %>%
   arrange(after_june) %>% 
   mutate(after_june = if_else(after_june == "TRUE", "During/After June", "Before June"))
 
-# Plot predicted probabilities
 ggplot(plot_data, aes(x = stage, y = predicted, group = after_june)) +
   geom_point(aes(color = after_june)) +
   geom_segment(aes(xend = if_else(stage == "pupa", stage, lead(stage)), yend = if_else(stage == "pupa", predicted, lead(predicted)), color = after_june)) +
@@ -105,7 +100,6 @@ plot_data <- pred_grid %>%
   arrange(after_2018) %>% 
   mutate(after_2018 = if_else(after_2018 == "TRUE", "During/After 2018", "Before 2018"))
 
-# Plot predicted probabilities
 ggplot(plot_data, aes(x = stage, y = predicted, group = after_2018)) +
   geom_point(aes(color = after_2018)) +
   geom_segment(aes(xend = if_else(stage == "pupa", stage, lead(stage)), yend = if_else(stage == "pupa", predicted, lead(predicted)), color = after_2018)) +
@@ -114,12 +108,17 @@ ggplot(plot_data, aes(x = stage, y = predicted, group = after_2018)) +
        color = "Collection Date") +
   theme_bw()
 
+# temperature and duration EDA plots -- these go with AFT model
+
+surv_data_pupae <- surv_data %>% 
+  filter(stage == "pupa")
+
+pd2 <- surv_data_pupae %>% filter(stage2 == "adult", rearing_year != 2023) %>% mutate(t2 = as.ordered(round(mean_temp, 1)))
+
 ggplot(surv_data_pupae, aes(x = duration)) +
   geom_bar(aes(fill = stage2), alpha = 0.6) +
   theme_bw()
 
-# temperature and duration EDA plots -- these go with AFT model
-pd2 <- surv_data_pupae %>% filter(stage2 == "adult", rearing_year != 2023) %>% mutate(t2 = as.ordered(round(mean_temp, 1)))
 
 ggplot(pd2, aes(x = duration, y = mean_temp)) +
   geom_point(aes(color = factor(rearing_year)), alpha = 0.5) +
@@ -177,6 +176,7 @@ res <- rbind(m1, m2, m3, m4, m5, mp) %>%
   filter(term == "mean_temp") %>% 
   mutate(stage = factor(stage, levels = c("First", "Second", "Third", "Fourth", "Fifth", "Pupa"), ordered = TRUE))
 
+# AFT results plot showing how much 1 degree of temp increase multiplies the length of time in the stage
 ggplot(res, aes(x = stage, y = estimate)) +
   geom_hline(yintercept = 1.00, col = "#BD210F", linetype = 2, size = 0.6) +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), col = "#817E9F") +
@@ -184,6 +184,7 @@ ggplot(res, aes(x = stage, y = estimate)) +
   labs(x = "Stage", y = "Time Ratio") +
   theme_bw(base_size = 15)
 
+# plots showing likelihood of remaining in stage over time for different values of temperature
 plot_model_fn <- function(model_to_plot, stage = "", temps = c(11, 14, 17), days = 15, ylab = NULL) {
   # generating df for plotting
   newdata <- data.frame(mean_temp = temps)
@@ -238,18 +239,3 @@ cowplot::plot_grid(
   legend)
 
 pp <- plot_model_fn(models_surv$pupa, "Pupa", temps = c(9, 10, 11, 12), days = 450)
-
-
-#### survfit plot for visualization of stages through time ####
-
-fit_null <- survfit(Surv(start, end, stage2) ~ 1, data = data, id = imb_id)
-
-fit_larvae <- survfit(Surv(start, end, stage2) ~ 1, data = larvae_data, id = imb_id)
-
-fit <- fit_larvae # put desired fit here to plot
-# fit <- fit_null
-
-plot(fit, col = c(1, 2, 3, 4, 5, 6, 1, 7), noplot = NULL,
-     xlab = "Days after entering the first instar",
-     ylab = "Probability in state")
-legend(35, .75, c("1st instar", "2nd instar", "3rd instar", "4th instar", "5th instar", "pupa", "death"), col = c(1, 2, 3, 4, 5, 6, 7), lty = 1)
