@@ -3,7 +3,6 @@ library(tidyverse)
 library(here)
 library(lubridate)
 library(forcats)
-library(climate)
 
 setwd(here::here("code"))
 
@@ -104,20 +103,10 @@ data <- cleaned_data %>%
       (missing_stage & later_all_na) | (stage == final_stage) ~ "died",
       missing_stage & !later_all_na ~ "censored"
     )
-  )
-
-data_no_censor <- data %>%
+  ) %>% 
   group_by(imb_id) %>% 
   filter(!("censored" %in% status) | status == "complete") %>% 
-  ungroup()
-
-# censored_individuals <- data %>% 
-#   filter(status == "censored") %>% 
-#   group_by(imb_id) %>% 
-#   arrange(stage) %>% 
-#   slice_head()
-
-data <- data_no_censor %>% 
+  ungroup() %>% 
   arrange(imb_id) %>% 
   select(-overall_survival, -missing_stage, -later_all_na) %>% 
   group_by(imb_id) %>% 
@@ -152,6 +141,7 @@ threshold <- 10 # really not sure what the temperature threshold is supposed to 
 # of butterflies is 15
 
 # only run this once, it takes a while. After that just read_csv to get the local data
+# library(climate)
 # station_temps <- meteo_noaa_hourly(
 #   station = "727985-94276",
 #   year = 2013:2024,
@@ -171,20 +161,8 @@ station_temps_cleaned <- station_temps %>%
   summarise(
     mean_temp = mean(temp, na.rm = TRUE)
   ) %>% 
-  ungroup() %>% 
-  mutate(degree_days = pmax(0, mean_temp - threshold))
-
-#### combining data with temp data ####
-# adding degree day data to rearing data
-result <- station_temps_cleaned %>%
-  cross_join(data) %>%  # Cross join
-  filter(date >= collection_day & date <= end) %>% # Keep only valid date ranges
-  group_by(imb_id, stage, start, end) %>%        # Group by unique intervals
-  summarize(cum_degree_days = sum(degree_days, na.rm = TRUE)) %>% 
   ungroup()
-  # group_by(imb_id, stage, collection_day, end) %>% 
-  # mutate(total_degree_days = sum(degree_days, na.rm = TRUE))
-
+#### combining data with temp data ####
 result_mean_temp <- station_temps_cleaned %>% 
   cross_join(data) %>%  # Cross join
   filter(date >= collection_day & date <= end) %>% # Keep only valid date ranges
@@ -193,41 +171,6 @@ result_mean_temp <- station_temps_cleaned %>%
   ungroup()
 
 # Merge summed results back into the original data
-dd_data <- data %>%
-  left_join(result, by = c("imb_id", "stage", "start", "end")) %>% 
-  mutate(
-    duration = as.integer((end-start))
-  ) %>% 
-  mutate(
-    # this is where I should do starting and ending dd too
-    start = as.integer(start - collection_day) / 86400, # seconds to days
-    end = as.integer(start + duration),
-    start = if_else(end == start, start - 1, start),
-    stage = factor(stage, levels = c("first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"), ordered = TRUE),
-    stage2 = fct_recode(stage, "second" = "first", "third" = "second", "fourth" = "third", "fifth" = "fourth", "pupa" = "fifth", "adult" = "pupa"),
-    after_2018 = if_else(rearing_year >= 2018, TRUE, FALSE)
-  ) %>% 
-  select(-final_stage, -status, -collection_day) %>% 
-  group_by(imb_id) %>% 
-  arrange(imb_id, stage) %>% 
-  mutate(
-    start_dd = if_else(row_number() == 1, 0, lag(cum_degree_days)),
-    stage = if_else(stage2 == "death", as.character(lag(stage2)), stage)
-    # total_dd = start_dd + degree_days
-  ) %>% 
-  ungroup() %>% 
-  filter(imb_id != "23SI024",
-         imb_id != "18SI029") %>% 
-  group_by(imb_id) %>% 
-  mutate(to_compare = row_number() == 1,
-  to_remove = if_else(to_compare & stage != "first", "yes", "no"),
-  to_remove = if_else("yes" %in% to_remove, T, F)) %>% 
-  filter(to_remove == FALSE) %>% 
-  select(-to_compare, -to_remove)
-  
-write_csv(dd_data, here::here("data", "dd_data.csv"))
-
-# do the same for the mean temp data
 mean_temp_data <- data %>%
   left_join(result_mean_temp, by = c("imb_id", "stage", "start", "end")) %>% 
   mutate(

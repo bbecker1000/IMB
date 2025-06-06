@@ -2,16 +2,13 @@ library(dplyr)
 library(tidyverse)
 library(here)
 library(lubridate)
-library(forcats)
 library(ggplot2)
 library(survival)
-library(icenReg)
 library(flexsurv)
 library(cowplot)
-library(purrr)
 library(lme4)
-library(ggeffects)
 library(sjPlot)
+library(stringr)
 
 #### reading in data ####
 temp_data <- read_csv(here::here("data", "mean_temp_data.csv")) %>% 
@@ -36,11 +33,40 @@ fit_larvae <- survfit(Surv(start, end, stage2) ~ 1, data = surv_data %>% filter(
 fit <- fit_larvae # put desired fit here to plot
 # fit <- fit_null
 
-plot(fit, col = c(1, 2, 3, 4, 5, 6, 1, 7), noplot = NULL,
-     xlab = "Days after entering the first instar",
-     ylab = "Probability in state")
-legend(35, .75, c("1st instar", "2nd instar", "3rd instar", "4th instar", "5th instar", "pupa", "death"), col = c(1, 2, 3, 4, 5, 6, 7), lty = 1)
+# plot(fit, col = palette, lwd = 2, noplot = NULL,
+#      xlab = "Days after entering the first instar",
+#      ylab = "Probability in state")
+# legend(35, .75, c("1st instar", "2nd instar", "3rd instar", "4th instar", "5th instar", "pupa", "death"), col = c(1, 2, 3, 4, 5, 6, 7), lty = 1)
 
+palette <- c("#6E0D25", "#B27092", "#D65108", "#5C573E", "#00BFB2", "#124E78", "#C91844")
+
+df <- data.frame(
+  time = fit$time,
+  prob = fit$pstate
+) %>% 
+  select(-prob.adult) %>% 
+  rename(
+    prob.first = prob..s0.
+  ) %>% 
+  pivot_longer(
+    cols = starts_with("prob"),
+    names_to = "stage",
+    values_to = "probability"
+  ) %>% 
+  mutate(
+    stage = fct_inorder(str_sub(stage, start = 6))
+  )
+
+ggplot(df, aes(x = time, y = probability, color = stage)) +
+  geom_smooth(se = F, span = 0.1) +
+  lims(y = c(0, 1.1)) +
+  labs(x = "Days after entering the first instar",
+       y = "Probability in state") +
+  theme_bw() +
+  scale_color_manual(
+    values = brewer.pal(8, "Spectral"),
+    name = "Developmental Stage",
+    labels = c("First Instar", "Second Instar", "Third Instar", "Fourth Instar", "Fifth Instar", "Pupa", "Death"))
 
 #### survivorship model -- logistic regression ####
 
@@ -80,33 +106,83 @@ pred_grid <- expand.grid(
   after_june = unique(surv_data$after_june),
   stage = unique(surv_data$stage)
 )
-pred_grid$predicted <- predict(surv_model, newdata = pred_grid, type = "response", re.form = NA)
 
-plot_data <- pred_grid %>% 
-  filter(after_2018 == "TRUE") %>% 
-  arrange(after_june) %>% 
-  mutate(after_june = if_else(after_june == "TRUE", "During/After June", "Before June"))
+predictions <- predict(surv_model, newdata = pred_grid, re.form = NA, type = "response")
 
-ggplot(plot_data, aes(x = stage, y = predicted, group = after_june)) +
-  geom_point(aes(color = after_june)) +
-  geom_segment(aes(xend = if_else(stage == "pupa", stage, lead(stage)), yend = if_else(stage == "pupa", predicted, lead(predicted)), color = after_june)) +
+
+# this takes forever to run, I saved it to boot_glmer_data.csv
+
+# predict_fun <- function(model) {
+#   predict(model, newdata = pred_grid, re.form = NA, type = "response")
+# }
+# 
+# boot_results <- bootMer(
+#   surv_model, 
+#   predict_fun, 
+#   nsim = 500, 
+#   use.u = FALSE, 
+#   type = "parametric",
+#   verbose = TRUE,
+#   parallel = "multicore",
+#   ncpus = 4
+# )
+
+# res <- data.frame(pred_grid, boot_results$t0, confint(boot_results)) %>% 
+#   rename(est = boot_results.t0,
+#          lower = X2.5..,
+#          upper = X97.5..)
+
+# write_csv(res, here::here("data", "boot_glmer_data.csv"))
+
+
+# run this instead to read the data
+res <- read_csv(here::here("data", "boot_glmer_data.csv")) %>% 
+  mutate(
+    stage = fct_inorder(stage)
+  )
+
+# TODO: make these plots prettier
+plot_data <- res %>% 
+  filter(after_2018 == "TRUE", after_june == "FALSE")
+
+# plot_data <- res %>% 
+#   filter(after_2018 == "FALSE", after_june == "TRUE")
+
+stage_plot <- ggplot(plot_data, aes(x = stage, y = est)) +
+  geom_crossbar(aes(ymin = lower, ymax = upper), fill = "#817E9F", alpha = 0.6) +
+  # geom_crossbar(aes(ymin = lower, ymax = upper), fill = "grey") +
   labs(x = "Developmental Stage",
-       y = "Predicted Probability of Survival",
-       color = "Collection Date") +
-  theme_bw()
+       y = "Predicted Probability of Survival") +
+  lims(y = c(0.8, 1)) +
+  theme_bw() +
+  scale_x_discrete(labels = c("First", "Second", "Third", "Fourth", "Fifth", "Pupa")) +
+  theme(text = element_text(size = 14))
+stage_plot
 
-plot_data <- pred_grid %>% 
-  filter(after_june == "FALSE") %>% 
-  arrange(after_2018) %>% 
-  mutate(after_2018 = if_else(after_2018 == "TRUE", "During/After 2018", "Before 2018"))
-
-ggplot(plot_data, aes(x = stage, y = predicted, group = after_2018)) +
-  geom_point(aes(color = after_2018)) +
-  geom_segment(aes(xend = if_else(stage == "pupa", stage, lead(stage)), yend = if_else(stage == "pupa", predicted, lead(predicted)), color = after_2018)) +
+cumulative_surv_data <- res %>% 
+  group_by(after_2018, after_june) %>% 
+  mutate(
+    cum_surv = cumprod(est),
+    cum_lower = cumprod(lower),
+    cum_upper = cumprod(upper),
+    stage_num = as.numeric(stage)
+  ) %>% 
+  ungroup() %>% 
+  filter(after_2018 == TRUE, after_june == FALSE)
+  
+cum_surv_plot <- ggplot(cumulative_surv_data, aes(x = stage_num, y = cum_surv)) +
+  geom_ribbon(aes(ymin = cum_lower, ymax = cum_upper), alpha = 0.6, fill = "#817E9F") +
+  geom_line(size = 1.5) +
   labs(x = "Developmental Stage",
-       y = "Predicted Probability of Survival",
-       color = "Collection Date") +
-  theme_bw()
+       y = "Predicted Cumulative Probability of Survival") +
+  lims(y = c(0.80, 1)) +
+  scale_x_continuous(breaks = 1:6, labels = c("First", "Second", "Third", "Fourth", "Fifth", "Pupa")) +
+  theme_bw() +
+  theme(text = element_text(size = 14))
+
+cum_surv_plot
+
+cowplot::plot_grid(stage_plot, cum_surv_plot)
 
 # temperature and duration EDA plots -- these go with AFT model
 
@@ -184,6 +260,8 @@ ggplot(res, aes(x = stage, y = estimate)) +
   labs(x = "Stage", y = "Time Ratio") +
   theme_bw(base_size = 15)
 
+palette <- c("#319CD2", "#474959", "#C2190A")
+
 # plots showing likelihood of remaining in stage over time for different values of temperature
 plot_model_fn <- function(model_to_plot, stage = "", temps = c(11, 14, 17), days = 15, ylab = NULL) {
   # generating df for plotting
@@ -211,21 +289,24 @@ plot_model_fn <- function(model_to_plot, stage = "", temps = c(11, 14, 17), days
   )
   
   ggplot(pred_df, aes(x = time, y = surv, color = factor(mean_temp))) +
-    geom_line(aes(y = lcl), linetype = "dotted") +
-    geom_line(aes(y = ucl), linetype = "dotted") +
-    # geom_ribbon(aes(ymin = lcl, ymax = ucl, fill = factor(mean_temp)), alpha = 0.4, linewidth = 0) +
-    geom_line() +
-    labs(x = paste0("Days after entering stage"),
+    # geom_line(aes(y = lcl), linetype = "dotted") +
+    # geom_line(aes(y = ucl), linetype = "dotted") +
+    geom_line(size = 1.3) +
+    scale_color_manual(
+      values = palette,
+      name = "Mean Temperature",
+      labels = c("11 °C", "14 °C", "17 °C")) +
+    labs(x = "Days after entering stage",
          y = ylab,
-         color = "Mean temperature",
          title = stage) +
-    theme_bw()
+    theme_bw() +
+    theme(text = element_text(size = 14))
 }
 
-p1 <- plot_model_fn(model_first_instar, "First instar", ylab = "Percent remaining in stage")
+p1 <- plot_model_fn(model_first_instar, "First instar", ylab = "Probability of remaining in stage")
 p2 <- plot_model_fn(model_second_instar, "Second instar")
 p3 <- plot_model_fn(model_third_instar, "Third instar")
-p4 <- plot_model_fn(model_fourth_instar, "Fourth instar", ylab = "Percent remaining in stage")
+p4 <- plot_model_fn(model_fourth_instar, "Fourth instar", ylab = "Probability of remaining in stage")
 p5 <- plot_model_fn(model_fifth_instar, "Fifth instar")
 
 legend <- get_legend(p1)
