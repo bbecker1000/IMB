@@ -39,14 +39,30 @@ mean_temp_plot <- ggplot(data = temp_data, aes(x = mean_temp, fill = stage)) +
   theme_bw()
 mean_temp_plot
 
-duration_temp_plot <- ggplot(temp_data %>% filter(stage2 != "death", stage != "pupa") %>% mutate(mean_temp = round(mean_temp)), aes(x = duration, y = stage)) +
-  geom_density(alpha = 0.9) +
+duration_temp_plot <- ggplot(temp_data %>% filter(stage != "pupa") %>% mutate(surv = if_else(stage2 == "death", "Death", "Survival to next stage")), aes(x = mean_temp)) +
+  geom_density(aes(fill = surv), alpha = 0.5) +
   # geom_smooth(method = "lm") +
-  theme_bw()
+  theme_bw() +
+  facet_wrap(~stage) +labs(x = "Mean Temperature", y = "Density", fill = "Outcome") +
+  theme(legend.position = c(0.8, 0.1)) +
+  scale_fill_manual(values = c("#D95B6A", "#5BDA77"))
 duration_temp_plot
 
+duration_temp_plot <- ggplot(temp_data %>% filter(stage == "pupa", rearing_year != 2024, mispupation == "N") %>% mutate(surv = if_else(stage2 == "death", "Death", "Survival to next stage")), aes(x = mean_temp)) +
+  geom_density(aes(fill = surv), alpha = 0.5) +
+  # geom_smooth(method = "lm") +
+  theme_bw() +
+  facet_wrap(~stage) +labs(x = "Mean Temperature", y = "Density", fill = "Outcome") +
+  theme(legend.position = c(0.8, 0.6)) +
+  scale_fill_manual(values = c("#D95B6A", "#5BDA77"))
+duration_temp_plot
+
+weird_data <- temp_data %>% 
+  filter(stage == "pupa", 
+         mean_temp > 11)
+
 # plot of mean temperatures for each stage
-mean_temp_plot <- ggplot(data = temp_data %>% filter(stage == "pupa"), aes(x = mean_temp, fill = stage2)) +
+mean_temp_plot <- ggplot(data = temp_data %>% filter(stage == "pupa"), aes(x = mean_temp, fill = )) +
   geom_density(alpha = 0.4) +
   theme_bw()
 mean_temp_plot

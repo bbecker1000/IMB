@@ -114,7 +114,6 @@ data <- cleaned_data %>%
   filter(d_dups <= 1) %>% 
   select(-d_dups, -survival)
 
-
 mean_durations <- data %>% 
   filter(!is.na(end)) %>% 
   group_by(stage) %>% 
@@ -206,3 +205,5 @@ mean_temp_data <- data %>%
   filter(!(stage == "pupa" & rearing_year == 2024))
 
 write_csv(mean_temp_data, here::here("data", "mean_temp_data.csv"))
+
+length(unique(mean_temp_data$imb_id))

@@ -9,6 +9,7 @@ library(cowplot)
 library(lme4)
 library(sjPlot)
 library(stringr)
+library(RColorBrewer)
 
 #### reading in data ####
 temp_data <- read_csv(here::here("data", "mean_temp_data.csv")) %>% 
@@ -25,6 +26,25 @@ temp_data <- read_csv(here::here("data", "mean_temp_data.csv")) %>%
   filter(!(stage == "pupa" & rearing_year == 2024),
          !(stage == "pupa" & duration ==1))
 
+# summary data table
+summary <- temp_data %>% filter(stage2 != "death") %>% 
+  group_by(stage) %>% 
+  summarise(mean_duration = mean(duration),
+            sd_duration = sd(duration))
+  
+# formatting data for model
+surv_data <- temp_data %>% 
+mutate(survival = as.factor(if_else(stage2 == "death", 0, 1)),
+       stage = factor(stage, ordered = F),
+       rearing_year_scaled = scale(rearing_year),
+       mean_temp_scaled = scale(mean_temp),
+       after_2018 = as.factor(after_2018),
+       after_june = as.factor(after_june))
+
+# for unscaling later
+mean_temp_sd <- sd(surv_data$mean_temp)
+mean_temp_mean <- mean(surv_data$mean_temp)
+
 #### survfit plots for visualization of stages through time ####
 
 fit_null <- survfit(Surv(start, end, stage2) ~ 1, data = surv_data, id = imb_id)
@@ -37,8 +57,6 @@ fit <- fit_larvae # put desired fit here to plot
 #      xlab = "Days after entering the first instar",
 #      ylab = "Probability in state")
 # legend(35, .75, c("1st instar", "2nd instar", "3rd instar", "4th instar", "5th instar", "pupa", "death"), col = c(1, 2, 3, 4, 5, 6, 7), lty = 1)
-
-palette <- c("#6E0D25", "#B27092", "#D65108", "#5C573E", "#00BFB2", "#124E78", "#C91844")
 
 df <- data.frame(
   time = fit$time,
@@ -64,24 +82,11 @@ ggplot(df, aes(x = time, y = probability, color = stage)) +
        y = "Probability in state") +
   theme_bw() +
   scale_color_manual(
-    values = brewer.pal(8, "Spectral"),
+    values = brewer.pal(8, "Dark2"), #set1
     name = "Developmental Stage",
     labels = c("First Instar", "Second Instar", "Third Instar", "Fourth Instar", "Fifth Instar", "Pupa", "Death"))
 
 #### survivorship model -- logistic regression ####
-
-# formatting data for model
-surv_data <- temp_data %>% 
-  mutate(survival = as.factor(if_else(stage2 == "death", 0, 1)),
-         stage = factor(stage, ordered = F),
-         rearing_year_scaled = scale(rearing_year),
-         mean_temp_scaled = scale(mean_temp),
-         after_2018 = as.factor(after_2018),
-         after_june = as.factor(after_june))
-
-# for unscaling later
-mean_temp_sd <- sd(surv_data$mean_temp)
-mean_temp_mean <- mean(surv_data$mean_temp)
 
 # glmer model
 surv_model <- glmer(survival ~ 
@@ -141,7 +146,6 @@ res <- read_csv(here::here("data", "boot_glmer_data.csv")) %>%
     stage = fct_inorder(stage)
   )
 
-# TODO: make these plots prettier
 plot_data <- res %>% 
   filter(after_2018 == "TRUE", after_june == "FALSE")
 
@@ -172,7 +176,7 @@ cumulative_surv_data <- res %>%
   
 cum_surv_plot <- ggplot(cumulative_surv_data, aes(x = stage_num, y = cum_surv)) +
   geom_ribbon(aes(ymin = cum_lower, ymax = cum_upper), alpha = 0.6, fill = "#817E9F") +
-  geom_line(size = 1.5) +
+  geom_line(linewidth = 1.5) +
   labs(x = "Developmental Stage",
        y = "Predicted Cumulative Probability of Survival") +
   lims(y = c(0.80, 1)) +
@@ -260,7 +264,7 @@ ggplot(res, aes(x = stage, y = estimate)) +
   labs(x = "Stage", y = "Time Ratio") +
   theme_bw(base_size = 15)
 
-palette <- c("#319CD2", "#474959", "#C2190A")
+palette <- c("#319CD2", "#474959", "#C2190A", "black")
 
 # plots showing likelihood of remaining in stage over time for different values of temperature
 plot_model_fn <- function(model_to_plot, stage = "", temps = c(11, 14, 17), days = 15, ylab = NULL) {
@@ -319,4 +323,5 @@ cowplot::plot_grid(
   p5 + theme(legend.position = "none"),
   legend)
 
-pp <- plot_model_fn(models_surv$pupa, "Pupa", temps = c(9, 10, 11, 12), days = 450)
+pp <- plot_model_fn(model_pupa, "Pupa", temps = c(9, 10, 11, 12), days = 450)
+pp
