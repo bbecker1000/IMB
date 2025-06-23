@@ -7,18 +7,18 @@ library(ggplot2)
 library(survival)
 library(climate)
 
-data <- read_csv(here::here("data", "dd_data.csv")) %>% 
-  mutate(
-    imb_id = as.factor(imb_id),
-    host_plant = as.factor(host_plant),
-    # overall_survival = as.factor(overall_survival),
-    rearing_year = as.integer(rearing_year),
-    stage = as.factor(stage)
-  ) %>% 
-  mutate_at(vars(contains("stage")), 
-            factor,
-            levels = c("first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"),
-            ordered = TRUE) 
+# data <- read_csv(here::here("data", "dd_data.csv")) %>% 
+#   mutate(
+#     imb_id = as.factor(imb_id),
+#     host_plant = as.factor(host_plant),
+#     # overall_survival = as.factor(overall_survival),
+#     rearing_year = as.integer(rearing_year),
+#     stage = as.factor(stage)
+#   ) %>% 
+#   mutate_at(vars(contains("stage")), 
+#             factor,
+#             levels = c("first", "second", "third", "fourth", "fifth", "pupa", "adult", "death"),
+#             ordered = TRUE) 
 
 temp_data <- read_csv(here::here("data", "mean_temp_data.csv")) %>% 
   mutate(
@@ -68,51 +68,51 @@ mean_temp_plot <- ggplot(data = temp_data %>% filter(stage == "pupa"), aes(x = m
 mean_temp_plot
 
 # plot of degree days by year
-temps <- station_temps_cleaned %>% 
-  mutate(year = year(date),
-         month = month(date),
-         day0 = mdy(paste0("01/01/", year)),
-         dayofYear = as.integer(date - day0),
-         degree_days = if_else(degree_days == "NaN", 0, degree_days),
-         year = as.factor(year)) %>% 
-  filter(year != "2024") %>% 
-  group_by(year) %>% 
-  mutate(cum_dd = cumsum(degree_days))
+# temps <- station_temps_cleaned %>% 
+#   mutate(year = year(date),
+#          month = month(date),
+#          day0 = mdy(paste0("01/01/", year)),
+#          dayofYear = as.integer(date - day0),
+#          degree_days = if_else(degree_days == "NaN", 0, degree_days),
+#          year = as.factor(year)) %>% 
+#   filter(year != "2024") %>% 
+#   group_by(year) %>% 
+#   mutate(cum_dd = cumsum(degree_days))
 
-ggplot(data = temps, aes(x = dayofYear, y = cum_dd)) +
-      geom_line(color = "darkgreen", linewidth = 1.3) +
-  facet_wrap(~year) +
-  theme_bw() +
-  labs(x = "day of year (0 = Jan. 1st)", y = "cumulative degree days")
-
-
-dd_data %>% group_by(imb_id) %>% 
-  slice(1) %>% 
-  ungroup() %>% 
-  count(overall_survival)
+# ggplot(data = temps, aes(x = dayofYear, y = cum_dd)) +
+#       geom_line(color = "darkgreen", linewidth = 1.3) +
+#   facet_wrap(~year) +
+#   theme_bw() +
+#   labs(x = "day of year (0 = Jan. 1st)", y = "cumulative degree days")
 
 
-ggplot(data = data, aes(x = stage)) +
-  geom_bar(stat = "count", aes(fill = survival)) +
-  theme_bw()
+# dd_data %>% group_by(imb_id) %>% 
+#   slice(1) %>% 
+#   ungroup() %>% 
+#   count(overall_survival)
 
-ggplot(data = data %>% filter(stage != "pupa"), aes(x = total_degree_days)) +
-  geom_density(aes(fill = stage), alpha = 0.4) +
-  theme_bw()
+
+# ggplot(data = data, aes(x = stage)) +
+#   geom_bar(stat = "count", aes(fill = survival)) +
+#   theme_bw()
+# 
+# ggplot(data = data %>% filter(stage != "pupa"), aes(x = total_degree_days)) +
+#   geom_density(aes(fill = stage), alpha = 0.4) +
+#   theme_bw()
 
 ggplot(data = data %>% filter(stage != "pupa"), aes(x = duration)) +
   geom_density(aes(fill = stage), alpha = 0.4) +
   theme_bw()
 
-cor(dd_data$duration, dd_data$total_degree_days)
+# cor(dd_data$duration, dd_data$total_degree_days)
 
-ggplot(data = data %>% filter(stage != "pupa"), aes(x = duration, y = total_degree_days)) +
-  geom_point() +
-  geom_smooth(method = "glm")
-
-ggplot(data = data %>% filter(stage == "pupa"), aes(x = duration, y = total_degree_days)) +
-  geom_point() +
-  geom_smooth(method = "glm")
+# ggplot(data = data %>% filter(stage != "pupa"), aes(x = duration, y = total_degree_days)) +
+#   geom_point() +
+#   geom_smooth(method = "glm")
+# 
+# ggplot(data = data %>% filter(stage == "pupa"), aes(x = duration, y = total_degree_days)) +
+#   geom_point() +
+#   geom_smooth(method = "glm")
 
 
 
@@ -130,7 +130,8 @@ temp_data <- read_csv(here::here("data", "continuous_temps.csv")) %>%
   select(date, time, temp) %>% 
   group_by(date) %>% 
   summarise(min = min(temp),
-            max = max(temp)) %>% 
+            max = max(temp),
+            mean_temp = mean(temp)) %>% 
   ungroup() %>% 
   mutate(degree_days = pmax(0, ((max+min)/2) - threshold))
 
@@ -140,13 +141,19 @@ temp_data <- read_csv(here::here("data", "continuous_temps.csv")) %>%
 
 temp_comparisons <- left_join(temp_data, station_temps_cleaned, 
                               by = join_by(date == date),
-                              suffix = c("_rearing_room", "_weather_station"))
+                              suffix = c("_rearing_room", "_weather_station")) %>% 
+  select(-min, -max, -degree_days)
 
-corr <- glm(degree_days_weather_station ~ degree_days_rearing_room,
+corr <- glm(mean ~ mean_temp,
             data = temp_comparisons)
 summary(corr)
 
-c <- cor(temp_comparisons$degree_days_rearing_room, temp_comparisons$degree_days_weather_station)
+c <- cor.test(temp_comparisons$mean_temp_rearing_room, temp_comparisons$mean_temp_weather_station,
+         method = "pearson")
+c
+
+c <- lm(mean_temp_rearing_room ~ mean_temp_weather_station,
+        data = temp_comparisons)
 c
 
 ggplot(data = temp_comparisons, aes(x = degree_days_weather_station, y = degree_days_rearing_room)) +

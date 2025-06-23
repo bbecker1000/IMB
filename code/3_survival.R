@@ -153,7 +153,7 @@ plot_data <- res %>%
 #   filter(after_2018 == "FALSE", after_june == "TRUE")
 
 stage_plot <- ggplot(plot_data, aes(x = stage, y = est)) +
-  geom_crossbar(aes(ymin = lower, ymax = upper), fill = "#817E9F", alpha = 0.6) +
+  geom_pointrange(aes(ymin = lower, ymax = upper)) +
   # geom_crossbar(aes(ymin = lower, ymax = upper), fill = "grey") +
   labs(x = "Developmental Stage",
        y = "Predicted Probability of Survival") +
@@ -254,12 +254,13 @@ mp <- tidy(model_pupa, conf.int = TRUE, transform = "coefs.exp") %>% mutate(stag
   
 res <- rbind(m1, m2, m3, m4, m5, mp) %>% 
   filter(term == "mean_temp") %>% 
-  mutate(stage = factor(stage, levels = c("First", "Second", "Third", "Fourth", "Fifth", "Pupa"), ordered = TRUE))
+  mutate(stage = factor(stage, levels = c("First", "Second", "Third", "Fourth", "Fifth", "Pupa"), ordered = TRUE),
+         stage = fct_rev(stage))
 
 # AFT results plot showing how much 1 degree of temp increase multiplies the length of time in the stage
-ggplot(res, aes(x = stage, y = estimate)) +
-  geom_hline(yintercept = 1.00, col = "#BD210F", linetype = 2, size = 0.6) +
-  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), col = "#817E9F") +
+ggplot(res, aes(x = estimate, y = stage)) +
+  geom_vline(xintercept = 1.00, col = "#BD210F", linetype = 2, linewidth = 0.6) +
+  geom_errorbar(aes(xmin = conf.low, xmax = conf.high), col = "#817E9F") +
   geom_point(size = 3, col = "black") +
   labs(x = "Stage", y = "Time Ratio") +
   theme_bw(base_size = 15)
