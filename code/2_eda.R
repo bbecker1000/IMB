@@ -135,7 +135,10 @@ temp_data <- read_csv(here::here("data", "continuous_temps.csv")) %>%
   ungroup() %>% 
   mutate(degree_days = pmax(0, ((max+min)/2) - threshold))
 
+summary(temp_data$date)
 
+ggplot(temp_data %>% filter(date > mdy("03272016")), aes(x = date)) +
+  geom_density()
 # testing correlations between rearing room and weather station data to see if extrapolation is reasonable
 # requires getting weatehr station temps by running data prep first
 
@@ -144,9 +147,9 @@ temp_comparisons <- left_join(temp_data, station_temps_cleaned,
                               suffix = c("_rearing_room", "_weather_station")) %>% 
   select(-min, -max, -degree_days)
 
-corr <- glm(mean ~ mean_temp,
-            data = temp_comparisons)
-summary(corr)
+# corr <- glm(mean ~ mean_temp,
+#             data = temp_comparisons)
+# summary(corr)
 
 c <- cor.test(temp_comparisons$mean_temp_rearing_room, temp_comparisons$mean_temp_weather_station,
          method = "pearson")
@@ -156,9 +159,14 @@ c <- lm(mean_temp_rearing_room ~ mean_temp_weather_station,
         data = temp_comparisons)
 c
 
-ggplot(data = temp_comparisons, aes(x = degree_days_weather_station, y = degree_days_rearing_room)) +
+plot(c)
+
+ggplot(data = temp_comparisons, aes(x = mean_temp_rearing_room, y = mean_temp_weather_station)) +
   geom_point(alpha = 0.7) +
   geom_smooth(method = "glm") +
+  labs(x = "Rearing Room Temperatures (°C)", y = "Friday Harbor Airport Temperatures (°C)") +
+  scale_x_continuous(limits = c(-10, 30)) +
+  scale_y_continuous(limits = c(-10, 30)) +
   theme_bw()
 
 

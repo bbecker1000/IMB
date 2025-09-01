@@ -56,7 +56,7 @@ cleaned_data <- raw_data %>%
          is.na(date_instar_5) | is.na(pupation_date) | date_instar_5 <= pupation_date,
          is.na(pupation_date) | is.na(eclosure_date) | pupation_date <= eclosure_date,
          !(is.na(hatch_date) & is.na(date_instar_2) & is.na(date_instar_3) & is.na(date_instar_4) & is.na(date_instar_5))) %>% 
-  filter(rearing_year != 2013) %>% 
+  # filter(rearing_year != 2013) %>% 
   mutate(
     # duration_egg = interval(collection_date, hatch_date),
     duration_first = interval(hatch_date, date_instar_2),
@@ -130,6 +130,7 @@ data <- left_join(data, mean_durations, by = c("stage")) %>%
   mutate(collection_day = min(start)) %>% 
   ungroup()
 
+data %>% select(imb_id, rearing_year) %>% group_by(imb_id) %>% slice(1) %>% ungroup() %>% count(rearing_year) %>% mutate(c = cumsum(n))
 
 #### temperature data ####  
 # adding temperature data from weather station
@@ -158,9 +159,12 @@ station_temps_cleaned <- station_temps %>%
   ) %>% 
   group_by(date) %>% 
   summarise(
-    mean_temp = mean(temp, na.rm = TRUE)
+    mean_temp_unaltered = mean(temp, na.rm = TRUE)
   ) %>% 
-  ungroup()
+  ungroup() %>% 
+  mutate(
+    mean_temp = mean_temp_unaltered + 2
+  )
 #### combining data with temp data ####
 result_mean_temp <- station_temps_cleaned %>% 
   cross_join(data) %>%  # Cross join
@@ -205,5 +209,3 @@ mean_temp_data <- data %>%
   filter(!(stage == "pupa" & rearing_year == 2024))
 
 write_csv(mean_temp_data, here::here("data", "mean_temp_data.csv"))
-
-length(unique(mean_temp_data$imb_id))
