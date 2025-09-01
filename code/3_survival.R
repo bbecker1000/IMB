@@ -112,7 +112,7 @@ ggplot(df, aes(x = time, y = probability, color = stage)) +
   lims(y = c(0, 1.1)) +
   labs(x = "Days after entering the first instar",
        y = "Probability in state") +
-  theme_bw() +
+  theme_bw(base_size = 14) +
   scale_color_manual(
     values = brewer.pal(8, "Dark2"), #set1
     name = "Developmental Stage",
@@ -140,91 +140,47 @@ plot_model(surv_model, type = "est", show.values = TRUE, value.offset = .3, vlin
   theme_bw() +
   labs(title = NULL)
 
-# plots showing likelihood of survival through each stage depending on collection month and year
-pred_grid <- expand.grid(
-  after_2018 = unique(surv_data$after_2018),
-  after_june = unique(surv_data$after_june),
-  stage_unordered = unique(surv_data$stage_unordered)
+# Get marginal predictions per stage (average over covariates)
+stage_preds <- predictions(
+  surv_model,
+  newdata = datagrid(stage_unordered = unique(surv_data$stage_unordered)),
+  by = "stage_unordered"
 )
 
-pred_grid$pred <- predict(surv_model, newdata = pred_grid, re.form = NA, type = "response")
+# Clean up for plotting
+stage_preds_df <- stage_preds %>%
+  dplyr::select(stage_unordered, estimate, conf.low, conf.high)
 
 
-# this takes forever to run, I saved it to boot_glmer_data.csv
-
-# predict_fun <- function(model) {
-#   predict(model, newdata = pred_grid, re.form = NA, type = "response")
-# }
-# 
-# boot_results <- bootMer(
-#   surv_model, 
-#   predict_fun, 
-#   nsim = 500, 
-#   use.u = FALSE, 
-#   type = "parametric",
-#   verbose = TRUE,
-#   parallel = "multicore",
-#   ncpus = 4
-# )
-
-# res <- data.frame(pred_grid, boot_results$t0, confint(boot_results)) %>% 
-#   rename(est = boot_results.t0,
-#          lower = X2.5..,
-#          upper = X97.5..)
-
-# write_csv(res, here::here("data", "boot_glmer_data.csv"))
+# Plot stage-specific survival probabilities
+glmm_surv_plot <- ggplot(stage_preds_df, aes(x = stage_unordered, y = estimate)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  labs(
+    x = "Developmental Stage",
+    y = "Predicted Survival Probability"
+  ) +
+  theme_bw(base_size = 14) +
+  lims(y = c(0.91, 1))
 
 
-# run this instead to read the data
-res <- read_csv(here::here("data", "boot_glmer_data.csv")) %>% 
-  mutate(
-    stage = fct_inorder(stage)
-  )
+# Multiply survival probabilities across stages to get cumulative survival trajectory
+stage_preds_df <- stage_preds_df %>%
+  arrange(factor(stage_unordered, levels = levels(surv_data$stage_unordered))) %>%
+  mutate(cumulative = cumprod(estimate))
 
-plot_data <- res %>% 
-  filter(after_2018 == "TRUE", after_june == "FALSE")
+# Plot cumulative survival
+glmm_cum_surv_plot <- ggplot(stage_preds_df, aes(x = stage_unordered, y = cumulative, group = 1)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 3) +
+  labs(
+    x = "Developmental Stage",
+    y = "Cumulative Survival Probability"
+  ) +
+  theme_bw(base_size = 14) +
+  lims(y = c(0.91, 1))
 
-# plot_data <- res %>% 
-#   filter(after_2018 == "FALSE", after_june == "TRUE")
-
-stage_plot <- ggplot(plot_data, aes(x = stage, y = est)) +
-  geom_pointrange(aes(ymin = lower, ymax = upper)) +
-  # geom_crossbar(aes(ymin = lower, ymax = upper), fill = "grey") +
-  labs(x = "Developmental Stage",
-       y = "Predicted Probability of Survival") +
-  lims(y = c(0.8, 1)) +
-  theme_bw() +
-  scale_x_discrete(labels = c("First", "Second", "Third", "Fourth", "Fifth", "Pupa")) +
-  theme(text = element_text(size = 14))
-stage_plot
-
-cumulative_surv_data <- res %>% 
-  group_by(after_2018, after_june) %>% 
-  mutate(
-    cum_surv = cumprod(est),
-    cum_lower = cumprod(lower),
-    cum_upper = cumprod(upper),
-    stage_num = as.numeric(stage)
-  ) %>% 
-  ungroup() %>% 
-  filter(after_2018 == TRUE, after_june == FALSE)
-  
-cum_surv_plot <- ggplot(cumulative_surv_data, aes(x = stage_num, y = cum_surv)) +
-  geom_ribbon(aes(ymin = cum_lower, ymax = cum_upper), alpha = 0.6, fill = "#817E9F") +
-  geom_line(linewidth = 1.5) +
-  labs(x = "Developmental Stage",
-       y = "Predicted Cumulative Probability of Survival") +
-  lims(y = c(0.80, 1)) +
-  scale_x_continuous(breaks = 1:6, labels = c("First", "Second", "Third", "Fourth", "Fifth", "Pupa")) +
-  theme_bw() +
-  theme(text = element_text(size = 14))
-
-cum_surv_plot
-
-cowplot::plot_grid(stage_plot, cum_surv_plot)
-
-# these plots but with marginaleffects
-
+cowplot::plot_grid(glmm_surv_plot, glmm_cum_surv_plot)
 
 ##############################
 # 5) EDA — temperature vs duration

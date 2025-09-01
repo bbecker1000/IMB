@@ -167,6 +167,6 @@ ggplot(data = temp_comparisons, aes(x = mean_temp_rearing_room, y = mean_temp_we
   labs(x = "Rearing Room Temperatures (°C)", y = "Friday Harbor Airport Temperatures (°C)") +
   scale_x_continuous(limits = c(-10, 30)) +
   scale_y_continuous(limits = c(-10, 30)) +
-  theme_bw()
+  theme_bw(base_size = 14)
 
 
